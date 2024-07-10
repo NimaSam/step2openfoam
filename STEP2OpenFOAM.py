@@ -10,6 +10,131 @@ import numpy as np
 import mathutils
 import random
 
+import json
+
+
+
+
+
+# ██████  ██      ███████ ███    ██ ██████  ███████ ██████  
+# ██   ██ ██      ██      ████   ██ ██   ██ ██      ██   ██ 
+# ██████  ██      █████   ██ ██  ██ ██   ██ █████   ██████  
+# ██   ██ ██      ██      ██  ██ ██ ██   ██ ██      ██   ██ 
+# ██████  ███████ ███████ ██   ████ ██████  ███████ ██   ██ 
+                                                          
+# All purely blender specific scripts
+
+def Set3DCursorToLocation(obj, local_pos):
+    '''Places the Blender 3D cursor at the global position of the 
+    local position <local_pos> in Object <obj> space. '''
+    world_matrix = obj.matrix_world
+    bpy.context.scene.cursor.location = world_matrix @ local_pos
+
+
+
+def SetActive(obj):
+    '''Sets the current object as active and selected in Blender.'''
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+
+
+def Reset3DCursor():
+    '''Resets Location of 3D cursor to (0,0,0)'''
+    bpy.context.scene.cursor.location = mathutils.Vector((0,0,0))
+
+
+
+def GetFirstMeshInScene():
+    '''Returns the first mesh object of the active scene.'''
+    for obj in bpy.context.scene.objects:
+        if obj.type == 'MESH':
+            return obj
+        
+    return None
+
+
+
+def BlenderPurgeOrphans():
+    '''Purges all Orphans in the Blender file'''
+    if bpy.app.version >= (3, 0, 0):
+        bpy.ops.outliner.orphans_purge(
+            do_local_ids=True, do_linked_ids=True, do_recursive=True
+        )
+    else:
+        # call purge_orphans() recursively until there are no more orphan data blocks to purge
+        result = bpy.ops.outliner.orphans_purge()
+        if result.pop() != "CANCELLED":
+            BlenderPurgeOrphans()
+
+
+def DeleteAllBlenderData():
+    '''Cleans all data in the current Blender file'''
+    if bpy.context.active_object and bpy.context.active_object.mode == "EDIT":
+        bpy.ops.object.editmode_toggle()
+
+    for obj in bpy.data.objects:
+        obj.hide_set(False)
+        obj.hide_select = False
+        obj.hide_viewport = False
+
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete()
+
+    collection_names = [col.name for col in bpy.data.collections]
+    for name in collection_names:
+        bpy.data.collections.remove(bpy.data.collections[name])
+
+    BlenderPurgeOrphans()
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ██ ███    ██ ███████ ██ ██████  ███████     ██████   ██████  ██ ███    ██ ████████ 
+# ██ ████   ██ ██      ██ ██   ██ ██          ██   ██ ██    ██ ██ ████   ██    ██    
+# ██ ██ ██  ██ ███████ ██ ██   ██ █████       ██████  ██    ██ ██ ██ ██  ██    ██    
+# ██ ██  ██ ██      ██ ██ ██   ██ ██          ██      ██    ██ ██ ██  ██ ██    ██    
+# ██ ██   ████ ███████ ██ ██████  ███████     ██       ██████  ██ ██   ████    ██    
+                                                                                   
+# All scripts which handle the location of a point inside the mesh
+
+def FindInsidePoint(obj, face_index = 0, delta = 1e-6, deltamax= 1e-4):
+    '''Finds a point inside the mesh by casting a ray from the <face_index>-th face of the Object <obj>,
+    and returning the midway point between ray cast origin and ray cast hit.'''
+
+    mesh = obj.data
+
+    # check whether specified face_index is out of bounds for given obj
+    try: face = mesh.polygons[face_index]
+    except: raise Exception('FindInsidePoint: Face Index out of bounds for given object. ' \
+                            'Try decreasing face index. (face_index = ' + str(face_index) + \
+                            ', No. polygons = ' + str(len(mesh.polygons)) + ')')
+    
+    face_center_local = face.center
+    face_normal_local = face.normal
+
+    ray_origin = face_center_local
+    ray_direction = - face_normal_local
+
+    ray_hit_location, iter, ray_origin_shifted, _, _ = IterRayCast(obj, ray_origin, ray_direction, face_index, delta, deltamax)
+
+    # print('FindInsidePoint: Raycast succeeded after ' + str(iter) + ' iterations.')
+
+    inside_pos = ( ray_origin_shifted + ray_hit_location ) / 2 
+
+    return inside_pos
+
+
+
 
 
 def IterRayCast(obj, ray_origin, ray_direction, face_index = 0, delta = 1e-6, deltamax= 1e-4, iter = 0, itermax = 100,):
@@ -56,33 +181,6 @@ def IterRayCast(obj, ray_origin, ray_direction, face_index = 0, delta = 1e-6, de
 
 
 
-def FindInsidePoint(obj, face_index = 0, delta = 1e-6, deltamax= 1e-4):
-    '''Finds a point inside the mesh by casting a ray from the <face_index>-th face of the Object <obj>,
-    and returning the midway point between ray cast origin and ray cast hit.'''
-
-    mesh = obj.data
-
-    # check whether specified face_index is out of bounds for given obj
-    try: face = mesh.polygons[face_index]
-    except: raise Exception('FindInsidePoint: Face Index out of bounds for given object. ' \
-                            'Try decreasing face index. (face_index = ' + str(face_index) + \
-                            ', No. polygons = ' + str(len(mesh.polygons)) + ')')
-    
-    face_center_local = face.center
-    face_normal_local = face.normal
-
-    ray_origin = face_center_local
-    ray_direction = - face_normal_local
-
-    ray_hit_location, iter, ray_origin_shifted, _, _ = IterRayCast(obj, ray_origin, ray_direction, face_index, delta, deltamax)
-
-    # print('FindInsidePoint: Raycast succeeded after ' + str(iter) + ' iterations.')
-
-    inside_pos = ( ray_origin_shifted + ray_hit_location ) / 2 
-
-    return inside_pos
-
-
 
 def GetInsidePointsForFaceIndices(obj, face_indices, delta = 1e-6, deltamax=1e-4):
     '''Finds the Inside Point for all Faces with indices <face_indices> of a given Object <obj>.'''
@@ -92,26 +190,6 @@ def GetInsidePointsForFaceIndices(obj, face_indices, delta = 1e-6, deltamax=1e-4
     return points
 
 
-
-def Set3DCursorToLocation(obj, local_pos):
-    '''Places the Blender 3D cursor at the global position of the 
-    local position <local_pos> in Object <obj> space. '''
-    world_matrix = obj.matrix_world
-    bpy.context.scene.cursor.location = world_matrix @ local_pos
-
-
-
-def Reset3DCursor():
-    '''Resets Location of 3D cursor to (0,0,0)'''
-    bpy.context.scene.cursor.location = mathutils.Vector((0,0,0))
-
-
-def GetRandomSphericalPoints(npoints, ndim=3):
-    '''Returns a distribution of <npoints> random, uniformly distributed, 
-    normalized vectors in <ndim> space. '''
-    vec = np.random.randn(ndim, npoints)
-    vec /= np.linalg.norm(vec, axis=0)
-    return vec
 
 
 
@@ -155,6 +233,17 @@ def FindOptimalPoint(obj, points, no_rays):
     mindist_idx = mindists.index(mindist)
 
     return points[mindist_idx], mindist
+
+
+
+
+
+def GetRandomSphericalPoints(npoints, ndim=3):
+    '''Returns a distribution of <npoints> random, uniformly distributed, 
+    normalized vectors in <ndim> space. '''
+    vec = np.random.randn(ndim, npoints)
+    vec /= np.linalg.norm(vec, axis=0)
+    return vec
 
 
 
@@ -208,7 +297,29 @@ def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50,
                     'Try increasing maximum interatios or decreasing delta threshold.')
 
 
-def LoadSTEP(filepath, file, detail_level = 100):
+
+
+
+
+
+
+
+
+
+
+
+
+# ██ ███    ███ ██████   ██████  ██████  ████████ 
+# ██ ████  ████ ██   ██ ██    ██ ██   ██    ██    
+# ██ ██ ████ ██ ██████  ██    ██ ██████     ██    
+# ██ ██  ██  ██ ██      ██    ██ ██   ██    ██    
+# ██ ██      ██ ██       ██████  ██   ██    ██    
+                                                
+# FILE LOADING: Handled by the STEPper Blender addon
+
+
+def ImportSTEP(filepath, file, detail_level = 100):
+    '''Loads a STEP file into Blender using the STEPper addon'''
     Reset3DCursor()
     try: 
         bpy.ops.import_scene.occ_import_step(filepath=filepath, 
@@ -216,32 +327,117 @@ def LoadSTEP(filepath, file, detail_level = 100):
                                              detail_level = detail_level,
                                              hierarchy_types = 'EMPTIES')
     except:
-        raise Exception('Blender STEPper addon not installed!')
+        raise Exception('STEPper Blender addon not installed!')
 
+
+
+
+
+
+
+
+
+
+
+# ███████ ██   ██ ██████   ██████  ██████  ████████ 
+# ██       ██ ██  ██   ██ ██    ██ ██   ██    ██    
+# █████     ███   ██████  ██    ██ ██████     ██    
+# ██       ██ ██  ██      ██    ██ ██   ██    ██    
+# ███████ ██   ██ ██       ██████  ██   ██    ██    
+                                                  
+                                                  
+# FILE EXPORT: Handled by SnappyhexmeshGUI Blender addon
+
+def ExportSnappyhexmeshGUI(exportpath, 
+                           obj, 
+                           no_cpus=1, 
+                           cell_length=0.1,
+                           surface_refinement_min=0,
+                           surface_refinement_max=0,
+                           feature_edge_level=0,
+                           cleanup_distance=1e-5):
+    '''
+    Handles export of <obj> to <exportpath> via the SnappyhexmeshGUI addon. 
+    '''
+
+    SetActive(obj) 
+    try: # check if plugin is installed
+        bpy.ops.object.snappyhexmeshgui_apply_locrotscale()
+    except:
+        raise Exception("SnappyHexMeshGUI Blender addon is not installed!")
+    
+    bpy.context.scene.snappyhexmeshgui.export_path = exportpath
+    bpy.context.scene.snappyhexmeshgui.number_of_cpus = no_cpus
+    bpy.context.scene.snappyhexmeshgui.cell_side_length = cell_length
+
+    SetActive(obj)
+    bpy.context.object.shmg_surface_min_level = surface_refinement_min
+    bpy.context.object.shmg_surface_max_level = surface_refinement_max
+    bpy.context.object.shmg_feature_edge_level = feature_edge_level
+    # TODO for some reason, the following property has to be passed as a string. 
+    # There also is the property snappyhexmeshgui.merge_distance, but it gets ignored or
+    # overwritten by merge_distance_string. Potentially buggy, investigate in future. 
+    bpy.context.scene.snappyhexmeshgui.merge_distance_string = str(cleanup_distance) 
+    bpy.ops.object.snappyhexmeshgui_cleanup_meshes()
+
+    bpy.ops.object.snappyhexmeshgui_add_location_in_mesh_object()
+    SetActive(obj) # obj needs to be set active after adding empty in scene for loc in mesh
+    bpy.ops.object.snappyhexmeshgui_export()
+
+
+
+
+
+
+
+
+
+
+
+
+# ███    ███  █████  ██ ███    ██ 
+# ████  ████ ██   ██ ██ ████   ██ 
+# ██ ████ ██ ███████ ██ ██ ██  ██ 
+# ██  ██  ██ ██   ██ ██ ██  ██ ██ 
+# ██      ██ ██   ██ ██ ██   ████ 
 
 if __name__ == "__main__":
 
+    configpath = 'C:/Users/Luke/Documents/GIT/step2openfoam/config.json'
+    with open(configpath, 'r') as f:
+        config = json.load(f)
+
+
     # Define whether the random distribution is deterministic
-    deterministic = 0
-    seed = 42
-    
+    deterministic = config['deterministic']
+    seed = config['seed']
     if deterministic:
         np.random.seed(seed)
         random.seed(seed)
+    filepath = config['filepath'] 
+    file = config['file'] 
+    detail_level = config['detail_level'] 
+    exportpath = config['exportpath'] 
+    no_cpus = config['no_cpus']
 
-    filepath = "C:/Users/Luke/Desktop/stp_test/"
-    file = "a.stp"
-    detail_level = 1000
 
-    exportpath = "C:/Users/Luke/Desktop/stp_test/export/"
 
-    LoadSTEP(filepath, file, detail_level=detail_level)
 
-    obj = bpy.context.active_object
+    # DeleteAllBlenderData()
 
-    optpoint = SearchForPointWithThreshold(obj, delta=0.001, maxiter=50, no_rays=50, no_rays_secondary=5000)
+    # ImportSTEP(filepath, file, detail_level=detail_level)
+
+    obj = GetFirstMeshInScene()
+
+    optpoint = SearchForPointWithThreshold(
+        obj, delta=0.001, maxiter=50, 
+        no_rays=50, no_rays_secondary=5000)
 
     Set3DCursorToLocation(obj, optpoint)    
+
+    ExportSnappyhexmeshGUI(exportpath, obj, no_cpus=no_cpus)
+
+    
 
 
     # filepath="C:\\Users\\Luke\\Desktop\\stp_test\\"
