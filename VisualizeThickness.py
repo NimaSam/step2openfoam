@@ -27,22 +27,25 @@ def GetDepth(obj, poly, delta = 1e-6):
     
     dist = 0
 
+
     if result:
         # print("hit loc " + str(hit_loc) + " center " + str(center))
         dist = (-hit_loc+center).length
         # print(dist)
-    else:
-        Set3DCursorToLocation(center)
-        return
+    # else:
+    #     Set3DCursorToLocation(center)
+    #     return
     
-    if dist <= 0:
-        Set3DCursorToLocation(center)
-        return
+    # if dist <= 0:
+    #     Set3DCursorToLocation(center)
+    #     return
     
 
     return dist
 
 
+
+def Clamp(x, xmin=0, xmax=1): return max(xmin, min(x, xmax))
 
 def GetColorFromValue(val, invert_colorbar = False):
     if val < 0:
@@ -78,7 +81,8 @@ def SetFaceColorToDepth(obj,
                         dmin=-1, dmax=-1, 
                         delta=1e-5,
                         invert_colorbar = False,  
-                        absolute = False):
+                        absolute = False,
+                        clamp_color = True):
     mesh = obj.data
 
     if not mesh.vertex_colors:
@@ -88,8 +92,11 @@ def SetFaceColorToDepth(obj,
     dists = [0 for i in range(len(mesh.polygons))]
     for i, poly in enumerate(mesh.polygons):
         dists[i] = GetDepth(obj, poly, delta)
+        # print(dists[i])
 
+    
     distmax = max(dists)
+    print(distmax)
 
     if distmax <= 0:
         raise Exception("Maximum distance equals to zero, check face normals!")
@@ -101,6 +108,8 @@ def SetFaceColorToDepth(obj,
 
     if dmin > 0 and dmax > 0 and dmax > dmin:
         dist_scaled = [(x - dmin)/(dmax - dmin) for x in dists]
+    else:
+        dist_scaled = [x/distmax for x in dists]
 
     # dist_scaled = dists
     # for x in dist_scaled:
@@ -114,8 +123,9 @@ def SetFaceColorToDepth(obj,
 
     for i, poly in enumerate(mesh.polygons):
         dist = dist_scaled[i]
-        col = GetColorFromValue(dist_scaled[i], invert_colorbar)
-        # print(str(i) + ", dist=" + str(dist_scaled[i]))
+        if clamp_color: dist = Clamp(dist)
+        col = GetColorFromValue(dist, invert_colorbar)
+        # print(str(i) + ", dist=" + str(dist))
         for idx in poly.loop_indices:
             col_layer.data[idx].color = col
 
@@ -192,13 +202,20 @@ def CreateCamera(obj, rot, orthographic, camera_safezone):
 
 
 if __name__ == "__main__":
-    obj = bpy.context.scene.objects["testgeom"]
+    obj = bpy.context.scene.objects["testgeom4"]
 
-    dmin = 0.1
-    dmax = 0.8
-    SetFaceColorToDepth(obj, 1, dmin=dmin, dmax=dmax, delta = 1e-2 )
+    dmin = 0.01
+    dmax = 0.3
+
+    SetActive(obj)
+    SetFaceColorToDepth(obj, 
+                        scale_colors=1, 
+                        dmin=dmin, dmax=dmax, 
+                        delta = 1e-2, 
+                        invert_colorbar=True,
+                        clamp_color=True)
 
     # SingleCastDebug(obj, j=50, dmin=0.1, dmax=2)
     rot = mathutils.Vector((pi/4, 0, pi/4))
-    CreateCamera(obj, rot, orthographic=True, camera_safezone=60)
+    # CreateCamera(obj, rot, orthographic=True, camera_safezone=60)
     bpy.ops.object.mode_set(mode='VERTEX_PAINT')
