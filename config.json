@@ -1,10 +1,10 @@
 {
     "deterministic":1,
     "seed":42,
-    "filepath":"C:/Users/Luke/Desktop/stp_test/",
-    "file":"a.stp",
-    "detail_level":1000,
-    "exportpath":"C:/Users/Luke/Documents/GIT/step2openfoam/export/",
+    "filepath":"D:/DATA2/GIT/IANUS/step2openfoam/step_samples/",
+    "file":"php8qWs1M.step",
+    "detail_level":100,
+    "exportpath":"D:/DATA2/GIT/IANUS/step2openfoam/export/",
     "no_cpus":4
  }
 

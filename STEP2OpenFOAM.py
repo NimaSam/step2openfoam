@@ -4,12 +4,25 @@
 # Date of creation: 09.07.2024
 
 
+bl_info = {
+    "name" : "Step2OpenFOAM",
+    "description" : "A pipeline for creating OpenFOAM data from .step files",
+    "author" : "Lukas Kilian",
+    "version" : (0, 1, 0),
+    "blender" : (4, 0, 0),
+    # "location" : "View3D",
+    # "warning" : "",
+    "support" : "COMMUNITY",
+    # "doc_url" : "",
+    # "category" : "3D View"
+}
+
 
 import bpy
 import numpy as np
 import mathutils
 import random
-
+import os
 import json
 
 
@@ -182,6 +195,7 @@ def IterRayCast(obj, ray_origin, ray_direction, face_index = 0, delta = 1e-6, de
 
 
 
+
 def GetInsidePointsForFaceIndices(obj, face_indices, delta = 1e-6, deltamax=1e-4):
     '''Finds the Inside Point for all Faces with indices <face_indices> of a given Object <obj>.'''
     points = [[] for i in range(len(face_indices))]
@@ -219,6 +233,8 @@ def GetMinDist(obj, ray_origin, no_rays):
 
 
 
+
+
 def FindOptimalPoint(obj, points, no_rays):
     '''Determines the point of <points> with the most space to surrounding <obj> geometry. '''
 
@@ -247,6 +263,7 @@ def GetRandomSphericalPoints(npoints, ndim=3):
 
 
 
+
 def GetRandomFaceIndices(obj, n_faces):
     '''Returns <n_faces> uniform, unique, random indices within the amount of polygons of <obj>'''
 
@@ -259,6 +276,9 @@ def GetRandomFaceIndices(obj, n_faces):
     indices = random.sample(range(0,N), n_faces)
     
     return indices
+
+
+
 
 
 def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50, no_rays_secondary = 1000):
@@ -318,9 +338,32 @@ def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50,
 # FILE LOADING: Handled by the STEPper Blender addon
 
 
+def CheckFilepath(filepath, file):
+    path = os.path.join(filepath, file)
+    if os.path.exists(path):
+        return filepath, file
+    else: #check if just the file ending is misspelled
+        if file.lower().endswith('.step'):
+            file = file[:-5] + '.stp'
+        elif file.lower().endswith('.stp'):
+            file = file[:-4] + '.step'
+        path = os.path.join(filepath, file)
+        if os.path.exists(path):
+            return filepath, file
+        
+    print('CheckFilepath Error: The specified file could not be found, aborting!')
+    raise Exception('Filepath incorrect!')
+
+    return filepath, file
+
+
 def ImportSTEP(filepath, file, detail_level = 100):
     '''Loads a STEP file into Blender using the STEPper addon'''
     Reset3DCursor()
+    
+    filepath, file = CheckFilepath(filepath, file)
+    # if not CheckFilepath(filepath, file):
+
     try: 
         bpy.ops.import_scene.occ_import_step(filepath=filepath, 
                                              override_file=file, 
@@ -328,6 +371,10 @@ def ImportSTEP(filepath, file, detail_level = 100):
                                              hierarchy_types = 'EMPTIES')
     except:
         raise Exception('STEPper Blender addon not installed!')
+    
+    print('Step2OpenFOAM: Importing STEP file ' + str(file) + ', detail level = ' + str(detail_level) + '...')
+
+
 
 
 
@@ -403,7 +450,16 @@ def ExportSnappyhexmeshGUI(exportpath,
 
 if __name__ == "__main__":
 
+    print('''   
+  ___ _            ___ ___                 ___ ___   _   __  __ 
+ / __| |_ ___ _ __|_  ) _ \ _ __  ___ _ _ | __/ _ \ /_\ |  \/  |
+ \__ \  _/ -_) '_ \/ / (_) | '_ \/ -_) ' \| _| (_) / _ \| |\/| |
+ |___/\__\___| .__/___\___/| .__/\___|_||_|_| \___/_/ \_\_|  |_|
+             |_|           |_|                            v0.1.0
+         ''')
+
     configpath = 'C:/Users/Luke/Documents/GIT/step2openfoam/config.json'
+    configpath = './config.json'
     with open(configpath, 'r') as f:
         config = json.load(f)
 
@@ -423,9 +479,9 @@ if __name__ == "__main__":
 
 
 
-    # DeleteAllBlenderData()
+    DeleteAllBlenderData()
 
-    # ImportSTEP(filepath, file, detail_level=detail_level)
+    ImportSTEP(filepath, file, detail_level=detail_level)
 
     obj = GetFirstMeshInScene()
 
