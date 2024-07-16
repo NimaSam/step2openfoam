@@ -26,7 +26,7 @@ blender.exe --background --python Step2OpenFOAM.py
 
 - '**deterministic**'
   - Values: 1 or 0
-  - If set to 1 the random functions will be deterministic
+  - If set to 1 the random functions will be deterministic (only applies to determination of locationInMesh)
 - '**seed**'
   - Values: [int] (e.g. 42)
   - Seed for the random functions if set to deterministic
