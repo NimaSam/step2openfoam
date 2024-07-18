@@ -24,27 +24,47 @@ blender.exe --background --python Step2OpenFOAM.py
 
 ## Config
 
-- '**deterministic**'
-  - Values: 1 or 0
-  - If set to 1 the random functions will be deterministic (only applies to determination of locationInMesh)
-- '**seed**'
-  - Values: [int] (e.g. 42)
-  - Seed for the random functions if set to deterministic
-- '**filepath**'
-  - Values: [str] (e.g. 'C:/path/to/directory/')
+#### Import Settings for STEPper
+
+- "**stepper_import_filepath**": *"./step_samples/"*,
   - Path to the base directory where the .step/.stp file is located
-- '**file**'
-  - Values: [str] (e.g. 'model.step')
+- "**stepper_import_file**": *"Oppo_reno_10_pro_5G.step"*,
   - Name of the file
-- '**detail_level**'
-  - Values: [int] (e.g. 1000)
+- "**stepper_import_detail_level**": *1000*,
   - How detailed the imported STEP file wil be meshed. This value is an input to the STEPper addon. Higher numbers create more vertices.
-- '**exportpath**'
-  - Values: [str] (e.g. 'C:/path/to/directory/export/')
+
+#### Export Settings for SnappyHexMeshGUI
+
+- "**snappyhex_export_filepath**": *"./export/"*,
   - Path to the folder where snappyhexmeshgui will export its files.
-- '**no_cpus**'
-  - Values: [int]
-  - No. CPUs specified in the snappyhexmeshgui export.
+- "**snappyhex_no_cpus**": *4*,
+  - No. CPUs for decomposeParDict
+- "**snappyhex_cell_length**": *0.1*,
+  - Length of Base Block Mesh Cell Size
+- "**snappyhex_surface_refinement_min**": *2*,
+  - Minimum cell refinement level for surface
+- "**snappyhex_surface_refinement_max**": *2*,
+  - Maximum cell refinement level for surface
+- "**snappyhex_cleanup_distance**": *1e-5*,
+  - Maximum distance for merging closeby vertices
+- "**snappyhex_feature_edge_level**": *0*,
+  - Feature edge refinemenet level for surface
+
+#### Settings for the Find Point Inside Mesh subfunction
+
+- "**pointInMesh_delta**": *0.001*,
+  - Minimum space to surrounding geometry for target point
+- "**pointInMesh_deterministic**": *1*,
+  - If set to 1 the random functions will be deterministic (only applies to determination of locationInMesh)
+- "**pointInMesh_maxiter**": *500*,
+  - Maximum iterations the script will run before aborting
+- "**pointInMesh_rays_primary**": *50*,
+  - No. of rays for first raycast. This should be a lower number (20 - 500)
+- "**pointInMesh_rays_secondary**": *5000*,
+  - No. of rays for secondary raycast. This value can be higher (500 - 10000). Higher numbers mean a more accurate result, but more computational time.
+- "**pointInMesh_seed**": *42*
+  - Seed for the random functions if set to deterministic
+
 
 
  
