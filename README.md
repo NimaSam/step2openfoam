@@ -1,7 +1,7 @@
-# step2openfoam
+# Step2OpenFOAM
 A python script collection to automate the import and processing of STEP files for the use in OpenFOAM simulations.
 
-`Step2OpenFOAM.py` creates a pipeline using the Blender addon STEPper and snappyhexmeshgui to automatically create blockMeshDict and snappyHexMeshDict files, as well as a triangulated .stl geometry. Furthermore, the script automatically determines a locationInMesh specified in snappyHexMeshDict using Blender's raycasting engine. The principle is described in more detail [below](#find-point-inside-mesh) . 
+`Step2OpenFOAM.py` creates a pipeline using the Blender addon STEPper and snappyhexmeshgui to automatically create blockMeshDict and snappyHexMeshDict files, as well as a triangulated .stl geometry. Furthermore, the script automatically determines a locationInMesh specified in snappyHexMeshDict using Blender's raycasting engine. The principle to locate this point is described in more detail [below](#find-point-inside-mesh) . 
 
 ## Prerequisites:
 
