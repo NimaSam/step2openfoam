@@ -29,7 +29,7 @@ blender.exe --background --python Step2OpenFOAM.py
 - "**stepper_import_filepath**": *"./step_samples/"*,
   - Path to the base directory where the .step/.stp file is located
 - "**stepper_import_file**": *"Oppo_reno_10_pro_5G.step"*,
-  - Name of the file
+  - Name of the step file 
 - "**stepper_import_detail_level**": *1000*,
   - How detailed the imported STEP file wil be meshed. This value is an input to the STEPper addon. Higher numbers create more vertices.
 
@@ -90,3 +90,6 @@ If no point can be found, the possible causes are:
 
 
 
+# Notes
+
+- The STEP sample file has been downloaded from https://grabcad.com/library/3d-printable-phone-case-1, original author: Ines Slimani
