@@ -8,7 +8,7 @@ bl_info = {
     "name" : "Step2OpenFOAM",
     "description" : "A pipeline for creating OpenFOAM data from .step files",
     "author" : "Lukas Kilian",
-    "version" : (0, 1, 0),
+    "version" : (0, 1, 1),
     "blender" : (4, 0, 0),
     # "location" : "View3D",
     # "warning" : "",
@@ -17,13 +17,94 @@ bl_info = {
     # "category" : "3D View"
 }
 
+progressbar_prefix_len = 30 # the length of the prefix string before printing the progress bar
 
-import bpy
-import numpy as np
-import mathutils
-import random
+dependencies = ['snappyhexmesh_gui-master', 'STEPper']
+
 import os
+import bpy
 import json
+import random
+import mathutils
+import addon_utils
+import numpy as np
+
+
+
+
+
+# ███    ███ ██ ███████  ██████ 
+# ████  ████ ██ ██      ██      
+# ██ ████ ██ ██ ███████ ██      
+# ██  ██  ██ ██      ██ ██      
+# ██      ██ ██ ███████  ██████ 
+                            
+# Utility and helper scripts
+
+def InfoMsg(msg, newline=False):
+    '''Utility script to print unified info messages in the console.'''
+    if newline: print('')
+    print('## Step2OpenFoam Info: ' +msg)
+    # print('')
+
+
+def PrintNameWithVersion():
+    '''Prints a fancy Ascii text with version number into the console'''
+    version_string = 'v' + str(bl_info['version'][0]) + \
+                     '.' + str(bl_info['version'][1]) + \
+                     '.' + str(bl_info['version'][2])
+    n = len(version_string)
+    nmax = 32
+    print(r'''   
+  ___ _            ___ ___                 ___ ___   _   __  __ 
+ / __| |_ ___ _ __|_  ) _ \ _ __  ___ _ _ | __/ _ \ /_\ |  \/  |
+ \__ \  _/ -_) '_ \/ / (_) | '_ \/ -_) ' \| _| (_) / _ \| |\/| |
+ |___/\__\___| .__/___\___/| .__/\___|_||_|_| \___/_/ \_\_|  |_|
+             |_|           |_|  ''' 
+          + (nmax-n)*' ' + version_string + '\n')
+
+
+
+def LoadConfig():
+    '''Loads the config file and returns the data.'''
+    configpath = './config.json'
+    if not os.path.exists(configpath):
+        raise Exception('Step2OpenFOAM Error: Config could not be found! Check configpath in main function!')
+
+    with open(configpath, 'r') as f:
+        config = json.load(f)
+    
+    return config
+
+
+
+
+# stolen with courtesy from https://stackoverflow.com/questions/3173320/text-progress-bar-in-terminal-with-block-characters
+# old fill symbol -> █
+def PrintProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '#', printEnd = "\r", fixedWidth = True):
+    '''
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    '''
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    if fixedWidth:
+        prefix += (progressbar_prefix_len - len(prefix)) * '.'
+        if len(prefix)>progressbar_prefix_len: prefix = prefix[:progressbar_prefix_len]
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    # Print New Line on Complete
+    if iteration == total: 
+        print()
+
 
 
 
@@ -37,6 +118,34 @@ import json
                                                           
 # All purely blender specific scripts
 
+def GetBlenderAddons():
+    '''
+    Returns the list of enabled addons..
+    '''
+    paths_list = addon_utils.paths()
+    addon_list = []
+    for path in paths_list:
+        for mod_name, mod_path in bpy.path.module_names(path):
+            is_enabled, is_loaded = addon_utils.check(mod_name)
+            addon_list.append(mod_name)
+    return addon_list
+
+
+
+def CheckAndEnableAddonDependencies():
+    '''
+    Checks whether addon dependencies are fulfilled. 
+    If an addon is installed but not enabled, enable it.
+    '''
+    available_addons = GetBlenderAddons()
+    for dependency in dependencies:
+        if dependency in available_addons:
+            is_enabled, is_loaded = addon_utils.check(dependency)
+            if not is_enabled:
+                addon_utils.enable(dependency)
+        else:
+            raise Exception('Step2OpenFOAM Error: Missing Addon : %s!'%(dependency))
+        
 def Set3DCursorToLocation(obj, local_pos):
     '''Places the Blender 3D cursor at the global position of the 
     local position <local_pos> in Object <obj> space. '''
@@ -59,13 +168,29 @@ def Reset3DCursor():
 
 
 def GetFirstMeshInScene():
-    '''Returns the first mesh object of the active scene.'''
-    for obj in bpy.context.scene.objects:
-        if obj.type == 'MESH':
-            return obj
-        
-    return None
+    '''
+    Returns the first mesh object of the active scene. 
+    This should be the first and only mesh after cleaning the blender scene and importing the STEP file. 
+    '''
+    
+    objs = bpy.context.scene.objects
+    meshes = [obj for obj in objs if obj.type == 'MESH']
 
+    if len(meshes) == 0:
+        print('Step2OpenFoam Warning: No mesh found in Scene!')
+        return None
+    elif len(meshes) > 1:
+        print('Step2OpenFoam Warning: More than 1 object found after import, returning first object!')
+    
+    obj = meshes[0]
+    return obj
+
+
+def BlenderApplyRotScale():
+    '''Apply Rotation and Scale of all objects in Blender file'''
+    for obj in bpy.context.scene.objects:
+        obj.select_set(True)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
 
 
 def BlenderPurgeOrphans():
@@ -108,10 +233,6 @@ def DeleteAllBlenderData():
 
 
 
-
-
-
-
 # ██ ███    ██ ███████ ██ ██████  ███████     ██████   ██████  ██ ███    ██ ████████ 
 # ██ ████   ██ ██      ██ ██   ██ ██          ██   ██ ██    ██ ██ ████   ██    ██    
 # ██ ██ ██  ██ ███████ ██ ██   ██ █████       ██████  ██    ██ ██ ██ ██  ██    ██    
@@ -119,6 +240,52 @@ def DeleteAllBlenderData():
 # ██ ██   ████ ███████ ██ ██████  ███████     ██       ██████  ██ ██   ████    ██    
                                                                                    
 # All scripts which handle the location of a point inside the mesh
+
+def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50, no_rays_secondary = 1000):
+    '''
+    Searches randomly through inner points within the geometry until 
+    a point with <delta> space in all directions is found 
+    or until <maxiter> iterations are surpassed. 
+    The intial check will be with <no_rays> rays. This number should be low for efficiency 
+    If no value surpases <delta>, a secondary check is done with <no_rays_secondary> rays. 
+    '''
+
+    # as written above, this script will check faces randomly throughout the mesh and check
+    # with a low ray number raycast whether any easily detectable object is close that already
+    # violates the delta requirement, i.e. a face that is closer to the inner point than required
+    # by delta. If that is not the case, a secondary, much more thorough check is done with a higher number
+    # of rays to (probabilistically) validate that there actually is nothing closer than delta.
+    # This script will keep running until maxiter iterations are surpassed or a point is found.
+
+    InfoMsg(' Attempting to find point inside mesh with delta = %s...'%(delta), True)
+
+    prog_msg = 'Running raycast...'
+    PrintProgressBar(0,maxiter, prefix = prog_msg, length = 40, fixedWidth=False)
+    
+    face_indices = GetRandomFaceIndices(obj, maxiter)
+
+    i = 0
+
+    # points = GetInsidePointsForFaceIndices(obj, face_indices)
+    while i < maxiter:
+        point = FindInsidePoint(obj, face_indices[i])
+        mindist, _ = GetMinDist(obj, point, no_rays)
+        PrintProgressBar(i+1,maxiter, prefix = prog_msg, length = 40, fixedWidth=False)
+        if mindist > delta:
+            mindist, _ = GetMinDist(obj, point, no_rays_secondary)
+            if mindist > delta:
+                PrintProgressBar(maxiter,maxiter, prefix = prog_msg, length = 40, fixedWidth=False)
+                mindiststr = "{:.6f}".format(mindist)
+                pointstr = ["{:.3f}".format(x) for x in point]
+                InfoMsg('Optimal point found at (%s, %s, %s) after %s iterations, min dist = %s'
+                        %(pointstr[0], pointstr[1], pointstr[2], i,mindiststr))
+                return point
+        i+=1
+
+    raise Exception('Step2OpenFOAM Error: No points found within %s iterations. ' \
+                    'Try increasing maximum interatios or decreasing delta threshold.'%(maxiter))
+
+
 
 def FindInsidePoint(obj, face_index = 0, delta = 1e-6, deltamax= 1e-4):
     '''Finds a point inside the mesh by casting a ray from the <face_index>-th face of the Object <obj>,
@@ -128,7 +295,7 @@ def FindInsidePoint(obj, face_index = 0, delta = 1e-6, deltamax= 1e-4):
 
     # check whether specified face_index is out of bounds for given obj
     try: face = mesh.polygons[face_index]
-    except: raise Exception('FindInsidePoint: Face Index out of bounds for given object. ' \
+    except: raise Exception('Step2OpenFOAM Error: Face Index out of bounds for given object. ' \
                             'Try decreasing face index. (face_index = ' + str(face_index) + \
                             ', No. polygons = ' + str(len(mesh.polygons)) + ')')
     
@@ -149,10 +316,9 @@ def FindInsidePoint(obj, face_index = 0, delta = 1e-6, deltamax= 1e-4):
 
 
 
-
 def IterRayCast(obj, ray_origin, ray_direction, face_index = 0, delta = 1e-6, deltamax= 1e-4, iter = 0, itermax = 100,):
     '''Iterative core function to find the inside point of a given object <obj> with defined 
-    ray origin <ray_origin> and ray direction <ray_direction>. Handels exceptions when no point is found
+    ray origin <ray_origin> and ray direction <ray_direction>. Throws exceptions when no point is found
     or ray cast fails due to other reasons.'''
 
     #shift the origin of the ray cast away from the center of the face (which is equal to ray_origin)
@@ -177,22 +343,20 @@ def IterRayCast(obj, ray_origin, ray_direction, face_index = 0, delta = 1e-6, de
             else: 
                 Set3DCursorToLocation(obj,ray_origin)
                 print('Face idx = ' + str(face_index) + ', 3D Cursor set to face where error occurred.')
-                raise Exception('IterRayCast: The raycast reached the maximum delta threshold. ' \
+                raise Exception('IterRayCast Error: The raycast reached the maximum delta threshold. ' \
                                 'Try increasing the maximum threshold but validate that the point is actually inside the geometry.')
         else: 
             Set3DCursorToLocation(obj,ray_origin)
             print('Face idx = ' + str(face_index) + ', 3D Cursor set to face where error occurred.')
-            raise Exception('IterRayCast: Maximum number of iterations reached (itermax = ' + str(itermax) + '). ' \
+            raise Exception('IterRayCast Error: Maximum number of iterations reached (itermax = ' + str(itermax) + '). ' \
                             'Try increasing maximum number of iterations.')
     elif not result: 
         Set3DCursorToLocation(obj,ray_origin)
         print('Face idx = ' + str(face_index) + ', 3D Cursor set to face where error occurred.')
-        raise Exception('IterRayCast: The raycast did not hit a face. ' \
+        raise Exception('IterRayCast Error: The raycast did not hit a face. ' \
                         'This can be because the mesh is not manifold or because the face normals are inverted.')
 
     return ray_hit_location, iter, ray_origin_shifted, result, index
-
-
 
 
 
@@ -204,6 +368,21 @@ def GetInsidePointsForFaceIndices(obj, face_indices, delta = 1e-6, deltamax=1e-4
     return points
 
 
+
+def FindOptimalPoint(obj, points, no_rays):
+    '''Determines the point of <points> with the most space to surrounding <obj> geometry. '''
+
+    N = len(points)
+    no_hit_flags = [False for i in range(N)]
+    mindists = [0 for i in range(N)]
+
+    for i, point in enumerate(points):
+        mindists[i], no_hit_flags[i] = GetMinDist(obj, point, no_rays)
+
+    mindist = min(mindists)
+    mindist_idx = mindists.index(mindist)
+
+    return points[mindist_idx], mindist
 
 
 
@@ -233,34 +412,12 @@ def GetMinDist(obj, ray_origin, no_rays):
 
 
 
-
-
-def FindOptimalPoint(obj, points, no_rays):
-    '''Determines the point of <points> with the most space to surrounding <obj> geometry. '''
-
-    N = len(points)
-    no_hit_flags = [False for i in range(N)]
-    mindists = [0 for i in range(N)]
-
-    for i, point in enumerate(points):
-        mindists[i], no_hit_flags[i] = GetMinDist(obj, point, no_rays)
-
-    mindist = min(mindists)
-    mindist_idx = mindists.index(mindist)
-
-    return points[mindist_idx], mindist
-
-
-
-
-
 def GetRandomSphericalPoints(npoints, ndim=3):
     '''Returns a distribution of <npoints> random, uniformly distributed, 
     normalized vectors in <ndim> space. '''
     vec = np.random.randn(ndim, npoints)
     vec /= np.linalg.norm(vec, axis=0)
     return vec
-
 
 
 
@@ -277,44 +434,6 @@ def GetRandomFaceIndices(obj, n_faces):
     
     return indices
 
-
-
-
-
-def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50, no_rays_secondary = 1000):
-    '''
-    Searches randomly through inner points within the geometry until 
-    a point with <delta> space in all directions is found 
-    or until <maxiter> iterations are surpassed. 
-    The intial check will be with <no_rays> rays. This number should be low for efficiency 
-    If no value surpases <delta>, a secondary check is done with <no_rays_secondary> rays. 
-    '''
-
-    # as written above, this script will check faces randomly throughout the mesh and check
-    # with a low ray number raycast whether any easily detectable object is close that already
-    # violates the delta requirement, i.e. a face that is closer to the inner point than required
-    # by delta. If that is not the case, a secondary, much more thorough check is done with a higher number
-    # of rays to (probabilistically) validate that there actually is nothing closer than delta.
-    # This script will keep running until maxiter iterations are surpassed or a point is found.
-
-
-    face_indices = GetRandomFaceIndices(obj, maxiter)
-
-    i = 0
-
-    # points = GetInsidePointsForFaceIndices(obj, face_indices)
-    while i < maxiter:
-        point = FindInsidePoint(obj, face_indices[i])
-        mindist, _ = GetMinDist(obj, point, no_rays)
-        if mindist > delta:
-            mindist, _ = GetMinDist(obj, point, no_rays_secondary)
-            if mindist > delta:
-                print('Optimal point found after ' + str(i) + ' iterations, mindist = ' + str(mindist))
-                return point
-        i+=1
-    
-    raise Exception('SearchForPointWithThreshold: No points found within ' + str(maxiter) + ' iterations. ' \
-                    'Try increasing maximum interatios or decreasing delta threshold.')
 
 
 
@@ -337,8 +456,12 @@ def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50,
                                                 
 # FILE LOADING: Handled by the STEPper Blender addon
 
-
 def CheckFilepath(filepath, file):
+    '''
+    Checks whether the filepath and to-be-imported file exists. 
+    Also handles misspelling of the extension .step and .stp.
+    '''
+
     path = os.path.join(filepath, file)
     if os.path.exists(path):
         return filepath, file
@@ -351,10 +474,8 @@ def CheckFilepath(filepath, file):
         if os.path.exists(path):
             return filepath, file
         
-    print('CheckFilepath Error: The specified file could not be found, aborting!')
-    raise Exception('Filepath incorrect!')
+    raise Exception('Step2OpenFOAM Error: The specified file could not be found!')
 
-    return filepath, file
 
 
 def ImportSTEP(filepath, file, detail_level = 100):
@@ -364,15 +485,15 @@ def ImportSTEP(filepath, file, detail_level = 100):
     filepath, file = CheckFilepath(filepath, file)
     # if not CheckFilepath(filepath, file):
 
-    try: 
-        bpy.ops.import_scene.occ_import_step(filepath=filepath, 
-                                             override_file=file, 
-                                             detail_level = detail_level,
-                                             hierarchy_types = 'EMPTIES')
-    except:
-        raise Exception('STEPper Blender addon not installed!')
-    
-    print('Step2OpenFOAM: Importing STEP file ' + str(file) + ', detail level = ' + str(detail_level) + '...')
+    InfoMsg('Importing STEP file %s, detail level = %s...'%(file,detail_level), True)
+
+    bpy.ops.import_scene.occ_import_step(filepath=filepath, 
+                                            override_file=file, 
+                                            detail_level = detail_level,
+                                            hierarchy_types = 'EMPTIES')
+    obj = GetFirstMeshInScene()
+    verts = len(obj.data.vertices)
+    InfoMsg('Successfully imported one mesh with %s vertices.'%(verts))
 
 
 
@@ -397,6 +518,7 @@ def ImportSTEP(filepath, file, detail_level = 100):
 
 def ExportSnappyhexmeshGUI(exportpath, 
                            obj, 
+                           clear_directory=True,
                            no_cpus=1, 
                            cell_length=0.1,
                            surface_refinement_min=0,
@@ -407,12 +529,18 @@ def ExportSnappyhexmeshGUI(exportpath,
     Handles export of <obj> to <exportpath> via the SnappyhexmeshGUI addon. 
     '''
 
-    SetActive(obj) 
-    try: # check if plugin is installed
-        bpy.ops.object.snappyhexmeshgui_apply_locrotscale()
-    except:
-        raise Exception("SnappyHexMeshGUI Blender addon is not installed!")
+    # This Exception handle should be obsolete as the check is done on script startup:
+    # try: # check if plugin is installed
+    #     bpy.context.scene.snappyhexmeshgui.bl_rna
+    # except:
+    #     raise Exception("Step2OpenFOAM Error: SnappyHexMeshGUI Blender addon is not installed!")
     
+    InfoMsg('Exporting mesh to SnappyHexMesh...', newline=True)
+    SetActive(obj) 
+    
+    if clear_directory: bpy.ops.object.snappyhexmeshgui_clean_case_dir()
+
+    bpy.ops.object.snappyhexmeshgui_apply_locrotscale()
     bpy.context.scene.snappyhexmeshgui.export_path = exportpath
     bpy.context.scene.snappyhexmeshgui.number_of_cpus = no_cpus
     bpy.context.scene.snappyhexmeshgui.cell_side_length = cell_length
@@ -431,10 +559,21 @@ def ExportSnappyhexmeshGUI(exportpath,
     SetActive(obj) # obj needs to be set active after adding empty in scene for loc in mesh
     bpy.ops.object.snappyhexmeshgui_export()
 
+    InfoMsg('Export succesful.')
 
 
 
-
+# Note: This function has become obsolete due to the 
+# built in function bpy.ops.object.snappyhexmeshgui_clean_case_dir
+def ClearExportDirectory(exportpath):
+    '''A function to handle cleaning of the export directory. For now it deletes only .stl files'''
+    n = 0
+    for root, dir, files in os.walk(exportpath):
+        for file in files:
+            if file.lower().endswith('.stl'):
+                n+=1
+                os.remove(os.path.join(root,file))
+    InfoMsg('Deleted %s .stl files from export directory.'%(n))
 
 
 
@@ -450,82 +589,64 @@ def ExportSnappyhexmeshGUI(exportpath,
 
 if __name__ == "__main__":
 
-    print('''   
-  ___ _            ___ ___                 ___ ___   _   __  __ 
- / __| |_ ___ _ __|_  ) _ \ _ __  ___ _ _ | __/ _ \ /_\ |  \/  |
- \__ \  _/ -_) '_ \/ / (_) | '_ \/ -_) ' \| _| (_) / _ \| |\/| |
- |___/\__\___| .__/___\___/| .__/\___|_||_|_| \___/_/ \_\_|  |_|
-             |_|           |_|                            v0.1.0
-         ''')
+    PrintNameWithVersion()
 
-    configpath = 'C:/Users/Luke/Documents/GIT/step2openfoam/config.json'
-    configpath = './config.json'
-    with open(configpath, 'r') as f:
-        config = json.load(f)
+    CheckAndEnableAddonDependencies()
+    
+    DeleteAllBlenderData()
 
+    config = LoadConfig()
 
-    # Define whether the random distribution is deterministic
-    deterministic = config['deterministic']
-    seed = config['seed']
+    # Import .step file via STEPper
+    filepath = config['stepper_import_filepath'] 
+    file = config['stepper_import_file'] 
+    detail_level = config['stepper_import_detail_level'] 
+    ImportSTEP(filepath, file, detail_level=detail_level)
+    BlenderApplyRotScale() # apply the custom scale given during the STEPper import
+
+    # Find point inside mesh
+    deterministic = config['pointInMesh_deterministic']
+    seed = config['pointInMesh_seed']
     if deterministic:
         np.random.seed(seed)
         random.seed(seed)
-    filepath = config['filepath'] 
-    file = config['file'] 
-    detail_level = config['detail_level'] 
-    exportpath = config['exportpath'] 
-    no_cpus = config['no_cpus']
 
-
-
-
-    DeleteAllBlenderData()
-
-    ImportSTEP(filepath, file, detail_level=detail_level)
-
+    # Get the first Mesh object in the scene. There should only be one mesh after the STEPper import
     obj = GetFirstMeshInScene()
 
+    # Find the point inside the mesh
+    delta = config['pointInMesh_delta']
+    maxiter = config['pointInMesh_maxiter']
+    no_rays = config['pointInMesh_rays_primary']
+    no_rays_secondary = config['pointInMesh_rays_secondary']
     optpoint = SearchForPointWithThreshold(
-        obj, delta=0.001, maxiter=50, 
-        no_rays=50, no_rays_secondary=5000)
+        obj, 
+        delta=delta, 
+        maxiter=maxiter, 
+        no_rays=no_rays, 
+        no_rays_secondary=no_rays_secondary
+        )
 
+    # The "location in mesh" for snappyhexmesh is set to where the 3D cursor is
     Set3DCursorToLocation(obj, optpoint)    
 
-    ExportSnappyhexmeshGUI(exportpath, obj, no_cpus=no_cpus)
+    # Export via snappyhexmeshgui
+    exportpath = config['snappyhex_export_filepath'] 
+    no_cpus = config['snappyhex_no_cpus']
+    surface_refinement_max = config['snappyhex_surface_refinement_max']
+    surface_refinement_min = config['snappyhex_surface_refinement_min']
+    cell_length = config['snappyhex_cell_length']
+    feature_edge_level = config['snappyhex_feature_edge_level']
+    cleanup_distance = config['snappyhex_cleanup_distance']
+    ExportSnappyhexmeshGUI(exportpath, 
+                           obj, 
+                           clear_directory=True,
+                           no_cpus=no_cpus,
+                           cell_length=cell_length,
+                           surface_refinement_max=surface_refinement_max,
+                           surface_refinement_min=surface_refinement_min,
+                           feature_edge_level=feature_edge_level,
+                           cleanup_distance=cleanup_distance,
+                           )
 
-    
-
-
-    # filepath="C:\\Users\\Luke\\Desktop\\stp_test\\"
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # This is a place to park potentially useful code snippets:
-
-
-    # face_indices = [i for i in range(20)]
-    # face_indices = GetRandomFaceIndices(obj, 50)
-    # print(face_indices)
-    # points = GetInsidePointsForFaceIndices(obj, face_indices)
-    # optpoint, mindist = FindOptimalPoint(obj, points, no_rays = 1000)
-    # print('Mindist = ' + str(mindist))
-
-
-
-    # world_matrix = obj.matrix_world
-    # obj_loc = obj.location
-    # face_center = world_matrix @ face_center_local
-    # face_normal = world_matrix.to_3x3() @ face_normal_local
-    # shift the raycast origin away slightly so it doesnt hit the same face it is cast from
-    # face_center_local_shifted = face_center_local - face_normal_local*delta
-    # ray_origin = face_center_local_shifted
+    InfoMsg("Ending execution.", newline=True)
