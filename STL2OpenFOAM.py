@@ -8,7 +8,7 @@ bl_info = {
     "name" : "STL2OpenFOAM",
     "description" : "A pipeline for creating OpenFOAM data from .STL files",
     "author" : "Lukas Kilian",
-    "version" : (0, 0, 1),
+    "version" : (0, 0, 2),
     "blender" : (4, 0, 0),
     # "location" : "View3D",
     # "warning" : "",
@@ -17,12 +17,22 @@ bl_info = {
     # "category" : "3D View"
 }
 
+
+openfoam_files = {}
+openfoam_files['blockmesh'] = './sample_project/system/blockMeshDict'
+
+
 progressbar_prefix_len = 30 # the length of the prefix string before printing the progress bar
 
-dependencies = ['snappyhexmesh_gui-master']
+version_string = 'v' + str(bl_info['version'][0]) + \
+                 '.' + str(bl_info['version'][1]) + \
+                 '.' + str(bl_info['version'][2])
+
+# dependencies = ['snappyhexmesh_gui-master']
 
 import os
 import bpy
+import sys
 import json
 import random
 import argparse
@@ -30,6 +40,7 @@ import mathutils
 # import addon_utils
 import numpy as np
 
+config_args = {}
 
 
 
@@ -50,9 +61,7 @@ def InfoMsg(msg, newline=False):
 
 def PrintNameWithVersion():
     '''Prints a fancy Ascii text with version number into the console'''
-    version_string = 'v' + str(bl_info['version'][0]) + \
-                     '.' + str(bl_info['version'][1]) + \
-                     '.' + str(bl_info['version'][2])
+
     n = len(version_string)
     nmax = 32
     print(r'''   
@@ -105,18 +114,18 @@ def PrintProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
         print()
 
 
+def _path_arg(configpath):
+    if not os.path.exists(configpath):
+        raise argparse.ArgumentTypeError('Invalid path, config file could not be found')
+    return configpath
+
 
 def SetupArgparser():
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('integers', metavar='N', type=int, nargs='+',
-                    help='an integer for the accumulator')
-    parser.add_argument('--sum', dest='accumulate', action='store_const',
-                    const=sum, default=max,
-                    help='sum the integers (default: find the max)')
-
+    parser = argparse.ArgumentParser(description='STL 2 OpenFOAM pipeline ' + version_string, prog='STL2OpenFOAM')
+    parser.add_argument('config_path', help = 'Path to the config file', type = _path_arg)
     args = parser.parse_args()
+    config_args['config'] = args.config_path
 
-    print(args.accumulate(args.integers))
 
 
 
@@ -128,36 +137,6 @@ def SetupArgparser():
 # ██████  ███████ ███████ ██   ████ ██████  ███████ ██   ██ 
                                                           
 # All purely blender specific scripts
-
-# def GetBlenderAddons():
-#     '''
-#     Returns the list of enabled addons..
-#     '''
-#     paths_list = addon_utils.paths()
-#     addon_list = []
-#     for path in paths_list:
-#         for mod_name, mod_path in bpy.path.module_names(path):
-#             is_enabled, is_loaded = addon_utils.check(mod_name)
-#             addon_list.append(mod_name)
-#     return addon_list
-
-
-
-# def CheckAndEnableAddonDependencies():
-#     '''
-#     Checks whether addon dependencies are fulfilled. 
-#     If an addon is installed but not enabled, enable it.
-#     '''
-#     available_addons = GetBlenderAddons()
-#     for dependency in dependencies:
-#         if dependency in available_addons:
-#             is_enabled, is_loaded = addon_utils.check(dependency)
-#             if not is_enabled:
-#                 addon_utils.enable(dependency)
-#         else:
-#             raise Exception('STL2OpenFOAM Error: Missing Addon : %s!'%(dependency))
-        
-
 
 def Set3DCursorToLocation(obj, local_pos):
     '''Places the Blender 3D cursor at the global position of the 
@@ -618,8 +597,123 @@ def GetRandomFaceIndices(obj, n_faces):
 
 
 
+# ██████  ██       ██████   ██████ ██   ██ ███    ███ ███████ ███████ ██   ██ 
+# ██   ██ ██      ██    ██ ██      ██  ██  ████  ████ ██      ██      ██   ██ 
+# ██████  ██      ██    ██ ██      █████   ██ ████ ██ █████   ███████ ███████ 
+# ██   ██ ██      ██    ██ ██      ██  ██  ██  ██  ██ ██           ██ ██   ██ 
+# ██████  ███████  ██████   ██████ ██   ██ ██      ██ ███████ ███████ ██   ██ 
+                                                                            
+                                                                            
+
+def WriteBlockMesh(obj, ndim, buffer = 0.1):
+    '''
+    Writes a BlockMeshDict of a given blender <obj>, 
+    creates a bounding box enlarged by <buffer> percent 
+    (e.g. 0.1 means the bounding box is 10% bigger, aka 110% of the actual size),
+    divides the largest dimension into <ndim> blocks and calculates the remaining 
+    block divisions accordingly.
+    '''
+    bbdata = GetBoundingBox(obj)
+
+    outputfile = './outputfile.txt'
+    blockmeshinput = openfoam_files['blockmesh'] 
+
+    dx = bbdata['dx']
+    dy = bbdata['dy']
+    dz = bbdata['dz']
+
+    dmax = max(dx,dy,dz)
+
+    delta = dmax/ndim
+    delta *= 1 + buffer # expand the block width by our buffer
+
+    O_delta = Magnitude(delta)
+    O_calc = O_delta -2 # this is the rounding accuracy for bockMesh creation, 2 dimensions finer than the block size.
+
+    # this is a glorified rounding function, but with ceil.
+    # computes floating point accuracy ceil of x with dimension n
+    MagnitudeCeil = lambda x, n : int(np.ceil(x/10**(n)))*10**(n)
+
+    # here we round our random float value to 2 dimensions smaller than the dimension of itself.
+    # e.g., delta = 0.034651 => O_delta = -2 => O_delta - 2 = -4 => delta_calc = 0.0347
+    delta_calc = MagnitudeCeil(delta, O_calc)
+
+    bm_xmax = MagnitudeCeil(bbdata['xmax'] + dx*buffer/2, O_calc)
+    bm_ymax = MagnitudeCeil(bbdata['ymax'] + dy*buffer/2, O_calc)
+    bm_zmax = MagnitudeCeil(bbdata['zmax'] + dz*buffer/2, O_calc)
+
+    div_x = int(np.ceil(dx*(1+buffer) / delta_calc))
+    div_y = int(np.ceil(dy*(1+buffer) / delta_calc))
+    div_z = int(np.ceil(dz*(1+buffer) / delta_calc))
+
+    bm_xmin = bm_xmax - div_x * delta_calc
+    bm_ymin = bm_ymax - div_y * delta_calc
+    bm_zmin = bm_zmax - div_z * delta_calc
+
+    with open(blockmeshinput, 'r') as f:
+        data = f.read()
+
+        # calling another round operation here to get rid of floating point errors (0.12340000000000001 -> 0.1234)
+        # also round is OK here because the value has already bein ceiled towards its target...
+        data = data.replace('ofkey_xmin', str(round(bm_xmax, -O_calc)))
+        data = data.replace('ofkey_ymin', str(round(bm_ymax, -O_calc)))
+        data = data.replace('ofkey_zmin', str(round(bm_zmax, -O_calc)))
+
+        data = data.replace('ofkey_xmax', str(round(bm_xmin, -O_calc)))
+        data = data.replace('ofkey_ymax', str(round(bm_ymin, -O_calc)))
+        data = data.replace('ofkey_zmax', str(round(bm_zmin, -O_calc)))
+
+        data = data.replace('ofkey_blocksx', str(div_x))
+        data = data.replace('ofkey_blocksy', str(div_y))
+        data = data.replace('ofkey_blocksz', str(div_z))
+
+    with open(outputfile, 'w') as f:
+        f.write(data)
 
 
+
+
+
+def Magnitude(x):
+    '''Returns the magnitude of a value <x>'''
+    if x == 0:
+        return None
+    return int(np.floor(np.log10(np.abs(x))))
+
+
+
+    
+
+
+def GetBoundingBox(obj):
+    '''
+    Returns bounding box vertices, and min, max and mean x, y & z values of a given <obj>.
+    '''
+
+    bboxVerts = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
+
+    xx = [a[0] for a in bboxVerts]
+    yy = [a[1] for a in bboxVerts]
+    zz = [a[2] for a in bboxVerts]
+
+    bbdata = {}
+
+    bbdata['xmin'] = min(xx)
+    bbdata['xmax'] = max(xx)
+    bbdata['ymin'] = min(yy)
+    bbdata['ymax'] = max(yy)
+    bbdata['zmin'] = min(zz)
+    bbdata['zmax'] = max(zz)
+
+    bbdata['dx'] = max(xx) - min(xx)
+    bbdata['dy'] = max(yy) - min(yy)
+    bbdata['dz'] = max(zz) - min(zz)
+    
+    bbdata['xmean'] = (min(xx) + max(xx)) / 2
+    bbdata['ymean'] = (min(yy) + max(yy)) / 2
+    bbdata['zmean'] = (min(zz) + max(zz)) / 2
+
+    return bbdata
 
 
 
@@ -734,13 +828,14 @@ def ClearExportDirectory(exportpath):
 
 if __name__ == "__main__":
 
+    SetupArgparser()
+
     PrintNameWithVersion()
 
     # CheckAndEnableAddonDependencies()
     
     DeleteAllBlenderData()
 
-    # SetupArgparser()
 
     configpath = './config_stl.json'
     configpath = 'D:/DATA2/GIT/IANUS/step2openfoam/config_stl.json'
@@ -787,6 +882,7 @@ if __name__ == "__main__":
     Set3DCursorToLocation(obj, optpoint)    
 
 
+    WriteBlockMesh(obj,65)
 
     SeparateGeometryByMaterialGroups(obj)
 
@@ -810,3 +906,4 @@ if __name__ == "__main__":
     #                        )
 
     # InfoMsg("Ending execution.", newline=True)
+
