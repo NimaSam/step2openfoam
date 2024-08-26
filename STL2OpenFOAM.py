@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 # author: Lukas Kilian
-# Step 2 OpenFOAM Pipeline
-# Date of creation: 09.07.2024
+# STL 2 OpenFOAM Pipeline
+# Date of creation: 23.08.2024
 
 
 bl_info = {
-    "name" : "Step2OpenFOAM",
-    "description" : "A pipeline for creating OpenFOAM data from .step files",
+    "name" : "STL2OpenFOAM",
+    "description" : "A pipeline for creating OpenFOAM data from .STL files",
     "author" : "Lukas Kilian",
-    "version" : (0, 1, 2),
+    "version" : (0, 0, 1),
     "blender" : (4, 0, 0),
     # "location" : "View3D",
     # "warning" : "",
@@ -19,7 +19,7 @@ bl_info = {
 
 progressbar_prefix_len = 30 # the length of the prefix string before printing the progress bar
 
-dependencies = ['snappyhexmesh_gui-master', 'STEPper']
+dependencies = ['snappyhexmesh_gui-master']
 
 import os
 import bpy
@@ -27,7 +27,7 @@ import json
 import random
 import argparse
 import mathutils
-import addon_utils
+# import addon_utils
 import numpy as np
 
 
@@ -44,7 +44,7 @@ import numpy as np
 def InfoMsg(msg, newline=False):
     '''Utility script to print unified info messages in the console.'''
     if newline: print('')
-    print('## Step2OpenFoam Info: ' +msg)
+    print('## STL2OpenFoam Info: ' +msg)
     # print('')
 
 
@@ -56,20 +56,19 @@ def PrintNameWithVersion():
     n = len(version_string)
     nmax = 32
     print(r'''   
-  ___ _            ___ ___                 ___ ___   _   __  __ 
- / __| |_ ___ _ __|_  ) _ \ _ __  ___ _ _ | __/ _ \ /_\ |  \/  |
- \__ \  _/ -_) '_ \/ / (_) | '_ \/ -_) ' \| _| (_) / _ \| |\/| |
- |___/\__\___| .__/___\___/| .__/\___|_||_|_| \___/_/ \_\_|  |_|
-             |_|           |_|  ''' 
+  ___ _____ _    ___ ___                 ___ ___   _   __  __ 
+ / __|_   _| |  |_  ) _ \ _ __  ___ _ _ | __/ _ \ /_\ |  \/  |
+ \__ \ | | | |__ / / (_) | '_ \/ -_) ' \| _| (_) / _ \| |\/| |
+ |___/ |_| |____/___\___/| .__/\___|_||_|_| \___/_/ \_\_|  |_|
+                         |_|  ''' 
           + (nmax-n)*' ' + version_string + '\n')
 
 
 
-def LoadConfig():
+def LoadConfig(configpath):
     '''Loads the config file and returns the data.'''
-    configpath = './config.json'
     if not os.path.exists(configpath):
-        raise Exception('Step2OpenFOAM Error: Config could not be found! Check configpath in main function!')
+        raise Exception('STL2OpenFOAM Error: Config could not be found! Check configpath in main function!')
 
     with open(configpath, 'r') as f:
         config = json.load(f)
@@ -130,34 +129,36 @@ def SetupArgparser():
                                                           
 # All purely blender specific scripts
 
-def GetBlenderAddons():
-    '''
-    Returns the list of enabled addons..
-    '''
-    paths_list = addon_utils.paths()
-    addon_list = []
-    for path in paths_list:
-        for mod_name, mod_path in bpy.path.module_names(path):
-            is_enabled, is_loaded = addon_utils.check(mod_name)
-            addon_list.append(mod_name)
-    return addon_list
+# def GetBlenderAddons():
+#     '''
+#     Returns the list of enabled addons..
+#     '''
+#     paths_list = addon_utils.paths()
+#     addon_list = []
+#     for path in paths_list:
+#         for mod_name, mod_path in bpy.path.module_names(path):
+#             is_enabled, is_loaded = addon_utils.check(mod_name)
+#             addon_list.append(mod_name)
+#     return addon_list
 
 
 
-def CheckAndEnableAddonDependencies():
-    '''
-    Checks whether addon dependencies are fulfilled. 
-    If an addon is installed but not enabled, enable it.
-    '''
-    available_addons = GetBlenderAddons()
-    for dependency in dependencies:
-        if dependency in available_addons:
-            is_enabled, is_loaded = addon_utils.check(dependency)
-            if not is_enabled:
-                addon_utils.enable(dependency)
-        else:
-            raise Exception('Step2OpenFOAM Error: Missing Addon : %s!'%(dependency))
+# def CheckAndEnableAddonDependencies():
+#     '''
+#     Checks whether addon dependencies are fulfilled. 
+#     If an addon is installed but not enabled, enable it.
+#     '''
+#     available_addons = GetBlenderAddons()
+#     for dependency in dependencies:
+#         if dependency in available_addons:
+#             is_enabled, is_loaded = addon_utils.check(dependency)
+#             if not is_enabled:
+#                 addon_utils.enable(dependency)
+#         else:
+#             raise Exception('STL2OpenFOAM Error: Missing Addon : %s!'%(dependency))
         
+
+
 def Set3DCursorToLocation(obj, local_pos):
     '''Places the Blender 3D cursor at the global position of the 
     local position <local_pos> in Object <obj> space. '''
@@ -189,10 +190,10 @@ def GetFirstMeshInScene():
     meshes = [obj for obj in objs if obj.type == 'MESH']
 
     if len(meshes) == 0:
-        print('Step2OpenFoam Warning: No mesh found in Scene!')
+        print('STL2OpenFoam Warning: No mesh found in Scene!')
         return None
     elif len(meshes) > 1:
-        print('Step2OpenFoam Warning: More than 1 object found after import, returning first object!')
+        print('STL2OpenFoam Warning: More than 1 object found after import, returning first object!')
     
     obj = meshes[0]
     return obj
@@ -222,25 +223,192 @@ def DeleteAllBlenderData():
     '''Cleans all data in the current Blender file'''
     if bpy.context.active_object and bpy.context.active_object.mode == "EDIT":
         bpy.ops.object.editmode_toggle()
-
     for obj in bpy.data.objects:
         obj.hide_set(False)
         obj.hide_select = False
         obj.hide_viewport = False
-
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete()
-
     collection_names = [col.name for col in bpy.data.collections]
     for name in collection_names:
         bpy.data.collections.remove(bpy.data.collections[name])
-
     BlenderPurgeOrphans()
 
 
 
+def JoinAllMeshesAndAssignMaterialSlots():
+    '''
+    Joins all objects into one mesh and assigns materials
+    based on the object names for the purpose of mesh
+    quality assurance and later separation via the material slots
+    '''
+
+    objs = bpy.context.scene.objects
+
+    if len(objs) <= 1: #if there is one or no objects, do nothing
+        return
+    
+    
+    
+    for obj in objs:
+        mat = bpy.data.materials.get(obj.name)
+        if not mat:
+            mat = bpy.data.materials.new(name = obj.name)
+        if obj.data.materials:
+            raise Warning('Object already has a material slot. This should not happen. Something is wrong with import or material assignment.')
+        obj.data.materials.append(mat)
+
+    target = objs[0] #join all objects into the first one
+
+    target.name = 'joined_geometry' #setting names just for clarity inside blender
+    target.data.name = 'data_joined_geometry'
+
+    for obj in objs:
+        obj.select_set(True)
+
+    bpy.context.view_layer.objects.active = target
+
+    bpy.ops.object.join()
+
+    return target
 
 
+
+
+def CleanMesh(obj, delete_non_manifold = False):
+    '''
+    Cleans the mesh of an obj. Specifically, remove doubles and merge tiny gaps, 
+    recalculate normals, delete inside faces, delete loose vertices, edges and faces.
+    '''
+
+    print('\nCleaning mesh...')
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode = 'EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.remove_doubles(threshold=1e-7)
+    bpy.ops.mesh.normals_make_consistent(inside=False)
+    bpy.ops.mesh.delete_loose(use_faces=True)
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.mesh.select_interior_faces()
+    bpy.ops.mesh.delete(type='FACE')
+
+    if delete_non_manifold:
+        bpy.ops.mesh.select_mode(type='VERT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_non_manifold()
+        bpy.ops.mesh.delete(type='VERT')
+
+    bpy.ops.object.mode_set(mode = 'OBJECT')
+
+
+
+
+def CheckMesh(obj):
+    '''
+    Checks the quality of a given mesh and outputs parameters into the console.
+    '''
+    print('\nChecking mesh...')
+    me = obj.data
+    no_v = len(me.vertices)
+    no_f = len(me.polygons)
+
+    def checkMeshPrint(msg, param):
+        n = len(msg)
+        m = 20
+        if n>m:
+            msg = msg[:m]
+            n = m
+        out = '>>> ' + msg + (m-n)*'.' + ' ' + str(param)
+        print(out)
+
+    face_lens = [len(x.vertices) for x in [p for p in me.polygons]]
+    no_tris = face_lens.count(3)
+    no_quads = face_lens.count(4)
+    no_ngons = no_f - no_quads - no_tris
+
+    checkMeshPrint('No. Vertices', no_v)
+    checkMeshPrint('No. Faces', no_f)
+    checkMeshPrint('... of that tris', no_tris)
+    checkMeshPrint('... of that quads', no_quads)
+    checkMeshPrint('... of that ngons', no_ngons)
+
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode = 'EDIT')
+    bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.mesh.select_non_manifold()
+    bpy.ops.object.mode_set(mode = 'OBJECT')
+    non_manifold_verts = [v for v in me.vertices if v.select]
+    no_non_manifold = len(non_manifold_verts)
+
+    checkMeshPrint('Non manifold', no_non_manifold)  
+    
+
+
+def SeparateGeometryByMaterialGroups(obj):
+    '''
+    Separates an obj by material slots and renames the resulting objs according to the latter.
+    '''
+    if not obj:
+        raise Exception('SeparateGeometryByMaterialGroups: No obj given or obj is empty.')
+    
+    bpy.ops.object.mode_set(mode = 'EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.separate(type='MATERIAL')
+
+    objs = bpy.data.objects
+    for obj in objs:
+        obj.name = obj.material_slots[0].name
+        obj.data.name = 'mesh_' + obj.name
+
+
+
+# may get back to this in the future for joining objects without ops. 
+# unused for now.
+# def appendMeshToMesh (passedHostOB, passedAppendOB, passedUpdate = True):
+#     result = False
+#     if passedHostOB != None:
+#         if passedHostOB.type == 'MESH':
+#             if passedAppendOB != None:
+#                 if passedAppendOB.type == 'MESH':
+#                     me_host = passedHostOB.data         # Fetch the host mesh.
+#                     me_append = passedAppendOB.data     # Fetch the append mesh.
+                    
+#                     # Transfer the vertices from the append to the host.
+#                     num_v = len(me_host.vertices)
+#                     num_append_v = len(me_append.vertices)
+#                     me_host.vertices.add(num_append_v)
+#                     for v in range(num_append_v):
+#                         # However, we need to offset the index by the number of verts in the host mesh we are appending to.
+#                         me_host.vertices[num_v + v].co = passedHostOB.matrix_world.inverted() @ passedAppendOB.matrix_world @ me_append.vertices[v].co
+#                         if me_append.vertices[v].select:
+#                             me_host.vertices[num_v + v].select = True
+
+#                     num_e = len(me_host.edges)
+#                     num_append_e = len(me_append.edges)
+#                     me_host.edges.add(num_append_e)
+#                     for e in range(num_append_e):
+#                         x_e = me_append.edges[e].vertices
+#                         o_e = [i + num_e for i in x_e]
+#                         me_host.edges[num_e + e].vertices = o_e
+
+#                     # Now append the faces...
+#                     num_f = len(me_host.polygons)
+#                     num_append_f = len(me_append.polygons)
+#                     me_host.polygons.add(num_append_f)
+#                     for f in range(num_append_f):
+#                         x_fv = me_append.polygons[f].vertices
+#                         o_fv = [i + num_v for i in x_fv]
+#                         # However, we need to offset the index by the number of polygons in the host mesh we are appending to.
+#                         if len(x_fv) == 4: 
+#                             me_host.polygons[num_f + f].vertices_raw = o_fv
+#                         else: 
+#                             me_host.polygons[num_f + f].vertices = o_fv
+                    
+#     #                 if passedUpdate == True:
+#     #                     me_host.update(calc_edges=True)
+#     #                 result = True
+#     # return result
 
 
 
@@ -294,7 +462,7 @@ def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50,
                 return point
         i+=1
 
-    raise Exception('Step2OpenFOAM Error: No points found within %s iterations. ' \
+    raise Exception('STL2OpenFOAM Error: No points found within %s iterations. ' \
                     'Try increasing maximum interatios or decreasing delta threshold.'%(maxiter))
 
 
@@ -307,7 +475,7 @@ def FindInsidePoint(obj, face_index = 0, delta = 1e-6, deltamax= 1e-4):
 
     # check whether specified face_index is out of bounds for given obj
     try: face = mesh.polygons[face_index]
-    except: raise Exception('Step2OpenFOAM Error: Face Index out of bounds for given object. ' \
+    except: raise Exception('STL2OpenFOAM Error: Face Index out of bounds for given object. ' \
                             'Try decreasing face index. (face_index = %s, No. polygons = %s)'
                             %(face_index,len(mesh.polygons)))
     
@@ -466,55 +634,20 @@ def GetRandomFaceIndices(obj, n_faces):
 # ██ ██  ██  ██ ██      ██    ██ ██   ██    ██    
 # ██ ██      ██ ██       ██████  ██   ██    ██    
                                                 
-# FILE LOADING: Handled by the STEPper Blender addon
-
-def CheckFilepath(filepath, file):
-    '''
-    Checks whether the filepath and to-be-imported file exists. 
-    Also handles misspelling of the extension .step and .stp.
-    '''
-
-    path = os.path.join(filepath, file)
-    if os.path.exists(path):
-        return filepath, file
-    else: #check if just the file ending is misspelled
-        if file.lower().endswith('.step'):
-            file = file[:-5] + '.stp'
-        elif file.lower().endswith('.stp'):
-            file = file[:-4] + '.step'
-        path = os.path.join(filepath, file)
-        if os.path.exists(path):
-            return filepath, file
-        
-    raise Exception('Step2OpenFOAM Error: The specified file could not be found!')
+# FILE LOADING: Import all STL files 
 
 
+def ImportSTLFiles(directory):
+    '''Imports all stl files which are immediate children in directory <directory> into the scene'''
+    if not os.path.exists(directory):
+        raise Exception('Directory could not be found, check in json and try again! (%s)'%(directory))
+    stlfiles = [file for file in os.listdir(directory) if file.lower().endswith('.stl')]
+    if not stlfiles:
+        raise Exception('No STL Files found in directory \'%s\', check directory and try again!'%(directory))
 
-def ImportSTEP(filepath, file, detail_level = 100):
-    '''Loads a STEP file into Blender using the STEPper addon'''
-    Reset3DCursor()
-    
-    filepath, file = CheckFilepath(filepath, file)
-    # if not CheckFilepath(filepath, file):
-
-    InfoMsg('Importing STEP file %s, detail level = %s...'%(file,detail_level), True)
-
-    bpy.ops.import_scene.occ_import_step(filepath=filepath, 
-                                            override_file=file, 
-                                            detail_level = detail_level,
-                                            hierarchy_types = 'EMPTIES')
-    obj = GetFirstMeshInScene()
-    verts = len(obj.data.vertices)
-    InfoMsg('Successfully imported one mesh with %s vertices.'%(verts))
-
-
-
-
-
-
-
-
-
+    for stlfile in stlfiles:
+        stlfilepath = os.path.join(directory, stlfile)
+        bpy.ops.wm.stl_import(filepath=stlfilepath) 
 
 
 
@@ -545,7 +678,7 @@ def ExportSnappyhexmeshGUI(exportpath,
     # try: # check if plugin is installed
     #     bpy.context.scene.snappyhexmeshgui.bl_rna
     # except:
-    #     raise Exception("Step2OpenFOAM Error: SnappyHexMeshGUI Blender addon is not installed!")
+    #     raise Exception("STL2OpenFOAM Error: SnappyHexMeshGUI Blender addon is not installed!")
     
     InfoMsg('Exporting mesh to SnappyHexMesh...', newline=True)
     SetActive(obj) 
@@ -603,21 +736,28 @@ if __name__ == "__main__":
 
     PrintNameWithVersion()
 
-    CheckAndEnableAddonDependencies()
+    # CheckAndEnableAddonDependencies()
     
     DeleteAllBlenderData()
 
     # SetupArgparser()
 
-    
-    config = LoadConfig()
+    configpath = './config_stl.json'
+    configpath = 'D:/DATA2/GIT/IANUS/step2openfoam/config_stl.json'
+    config = LoadConfig(configpath)
 
-    # Import .step file via STEPper
-    filepath = config['stepper_import_filepath'] 
-    file = config['stepper_import_file'] 
-    detail_level = config['stepper_import_detail_level'] 
-    ImportSTEP(filepath, file, detail_level=detail_level)
-    BlenderApplyRotScale() # apply the custom scale given during the STEPper import
+    # Import .stl files
+    filepath = config['stl_import_filepath'] 
+    filepath = 'D:/DATA2/GIT/IANUS/step2openfoam/stl_geometries'
+    
+    
+    ImportSTLFiles(filepath)
+
+    obj = JoinAllMeshesAndAssignMaterialSlots()
+    CleanMesh(obj, delete_non_manifold=True)
+    CheckMesh(obj)
+
+    # BlenderApplyRotScale() # apply the custom scale to objs
 
     # Find point inside mesh
     deterministic = config['pointInMesh_deterministic']
@@ -626,8 +766,9 @@ if __name__ == "__main__":
         np.random.seed(seed)
         random.seed(seed)
 
-    # Get the first Mesh object in the scene. There should only be one mesh after the STEPper import
-    obj = GetFirstMeshInScene()
+
+
+    # obj = GetFirstMeshInScene()
 
     # Find the point inside the mesh
     delta = config['pointInMesh_delta']
@@ -645,23 +786,27 @@ if __name__ == "__main__":
     # The "location in mesh" for snappyhexmesh is set to where the 3D cursor is
     Set3DCursorToLocation(obj, optpoint)    
 
-    # Export via snappyhexmeshgui
-    exportpath = config['snappyhex_export_filepath'] 
-    no_cpus = config['snappyhex_no_cpus']
-    surface_refinement_max = config['snappyhex_surface_refinement_max']
-    surface_refinement_min = config['snappyhex_surface_refinement_min']
-    cell_length = config['snappyhex_cell_length']
-    feature_edge_level = config['snappyhex_feature_edge_level']
-    cleanup_distance = config['snappyhex_cleanup_distance']
-    ExportSnappyhexmeshGUI(exportpath, 
-                           obj, 
-                           clear_directory=True,
-                           no_cpus=no_cpus,
-                           cell_length=cell_length,
-                           surface_refinement_max=surface_refinement_max,
-                           surface_refinement_min=surface_refinement_min,
-                           feature_edge_level=feature_edge_level,
-                           cleanup_distance=cleanup_distance,
-                           )
 
-    InfoMsg("Ending execution.", newline=True)
+
+    SeparateGeometryByMaterialGroups(obj)
+
+    # # Export via snappyhexmeshgui
+    # exportpath = config['snappyhex_export_filepath'] 
+    # no_cpus = config['snappyhex_no_cpus']
+    # surface_refinement_max = config['snappyhex_surface_refinement_max']
+    # surface_refinement_min = config['snappyhex_surface_refinement_min']
+    # cell_length = config['snappyhex_cell_length']
+    # feature_edge_level = config['snappyhex_feature_edge_level']
+    # cleanup_distance = config['snappyhex_cleanup_distance']
+    # ExportSnappyhexmeshGUI(exportpath, 
+    #                        obj, 
+    #                        clear_directory=True,
+    #                        no_cpus=no_cpus,
+    #                        cell_length=cell_length,
+    #                        surface_refinement_max=surface_refinement_max,
+    #                        surface_refinement_min=surface_refinement_min,
+    #                        feature_edge_level=feature_edge_level,
+    #                        cleanup_distance=cleanup_distance,
+    #                        )
+
+    # InfoMsg("Ending execution.", newline=True)
