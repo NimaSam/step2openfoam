@@ -1,0 +1,21 @@
+{
+    "stl_import_filepath":"./stl_geometries/",
+
+    "foam_export_filepath":"./export/",
+
+    "snappyhex_export_filepath":"./export/",
+    "snappyhex_no_cpus":4,
+    "snappyhex_cell_length":0.1,
+    "snappyhex_surface_refinement_min":2,
+    "snappyhex_surface_refinement_max":2,
+    "snappyhex_cleanup_distance":1e-5,
+    "snappyhex_feature_edge_level":0,
+
+    "pointInMesh_delta":0.001,
+    "pointInMesh_deterministic":1,
+    "pointInMesh_maxiter":500,
+    "pointInMesh_rays_primary":50,
+    "pointInMesh_rays_secondary":5000,
+    "pointInMesh_seed":42
+ }
+

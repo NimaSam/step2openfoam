@@ -3,43 +3,41 @@
 # STL 2 OpenFOAM Pipeline
 # Date of creation: 23.08.2024
 
-
-bl_info = {
-    "name" : "STL2OpenFOAM",
-    "description" : "A pipeline for creating OpenFOAM data from .STL files",
-    "author" : "Lukas Kilian",
-    "version" : (0, 0, 2),
-    "blender" : (4, 0, 0),
-    # "location" : "View3D",
-    # "warning" : "",
-    "support" : "COMMUNITY",
-    # "doc_url" : "",
-    # "category" : "3D View"
-}
-
-
-openfoam_files = {}
-openfoam_files['blockmesh'] = './sample_project/system/blockMeshDict'
-
-
-progressbar_prefix_len = 30 # the length of the prefix string before printing the progress bar
-
-version_string = 'v' + str(bl_info['version'][0]) + \
-                 '.' + str(bl_info['version'][1]) + \
-                 '.' + str(bl_info['version'][2])
-
-# dependencies = ['snappyhexmesh_gui-master']
-
 import os
 import bpy
 import sys
 import json
+import time
 import random
 import argparse
 import mathutils
-# import addon_utils
 import numpy as np
 
+# info about this script 
+bl_info = {
+    "name" : "STL2OpenFOAM",
+    "description" : "A pipeline for creating OpenFOAM data from .STL files",
+    "author" : "Lukas Kilian",
+    "version" : (0, 1, 0),
+    "blender" : (4, 0, 0),
+    "support" : "COMMUNITY",
+}
+
+# specifies the location of the sample project input files with respective keys set in the file.
+# this script works by looking for specific keys "ofkey_XXXX" and replacing the necessary values.
+openfoam_files = {}
+openfoam_files['blockmeshdict'] = './sample_project/system/blockMeshDict'
+openfoam_files['snappyhexmeshdict'] = './sample_project/system/snappyHexMeshDict'
+
+# the length of the prefix string before printing the progress bar
+progressbar_prefix_len = 30 
+
+# global variable to print the version of this file as 'v.X.X.X', eg. 'v.1.0.45'
+version_string = 'v' + str(bl_info['version'][0]) + \
+                 '.' + str(bl_info['version'][1]) + \
+                 '.' + str(bl_info['version'][2])
+
+# creating global variable to store arguments of argparser
 config_args = {}
 
 
@@ -83,7 +81,6 @@ def LoadConfig(configpath):
         config = json.load(f)
     
     return config
-
 
 
 
@@ -146,10 +143,10 @@ def Set3DCursorToLocation(obj, local_pos):
 
 
 
-def SetActive(obj):
-    '''Sets the current object as active and selected in Blender.'''
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
+# def SetActive(obj):
+#     '''Sets the current object as active and selected in Blender.'''
+#     bpy.context.view_layer.objects.active = obj
+#     obj.select_set(True)
 
 
 
@@ -159,23 +156,23 @@ def Reset3DCursor():
 
 
 
-def GetFirstMeshInScene():
-    '''
-    Returns the first mesh object of the active scene. 
-    This should be the first and only mesh after cleaning the blender scene and importing the STEP file. 
-    '''
+# def GetFirstMeshInScene():
+#     '''
+#     Returns the first mesh object of the active scene. 
+#     This should be the first and only mesh after cleaning the blender scene and importing the STEP file. 
+#     '''
     
-    objs = bpy.context.scene.objects
-    meshes = [obj for obj in objs if obj.type == 'MESH']
+#     objs = bpy.context.scene.objects
+#     meshes = [obj for obj in objs if obj.type == 'MESH']
 
-    if len(meshes) == 0:
-        print('STL2OpenFoam Warning: No mesh found in Scene!')
-        return None
-    elif len(meshes) > 1:
-        print('STL2OpenFoam Warning: More than 1 object found after import, returning first object!')
+#     if len(meshes) == 0:
+#         print('STL2OpenFoam Warning: No mesh found in Scene!')
+#         return None
+#     elif len(meshes) > 1:
+#         print('STL2OpenFoam Warning: More than 1 object found after import, returning first object!')
     
-    obj = meshes[0]
-    return obj
+#     obj = meshes[0]
+#     return obj
 
 
 def BlenderApplyRotScale():
@@ -224,9 +221,11 @@ def JoinAllMeshesAndAssignMaterialSlots():
 
     objs = bpy.context.scene.objects
 
-    if len(objs) <= 1: #if there is one or no objects, do nothing
+    if len(objs) < 1: #if there is no object, do nothing
         return
     
+    # if len(objs) == 1: #if there is just one object, return it
+    #     return objs[0]
     
     
     for obj in objs:
@@ -256,7 +255,7 @@ def JoinAllMeshesAndAssignMaterialSlots():
 
 def CleanMesh(obj, delete_non_manifold = False):
     '''
-    Cleans the mesh of an obj. Specifically, remove doubles and merge tiny gaps, 
+    Cleans the mesh of an <obj>. Specifically, remove doubles and merge tiny gaps, 
     recalculate normals, delete inside faces, delete loose vertices, edges and faces.
     '''
 
@@ -284,7 +283,7 @@ def CleanMesh(obj, delete_non_manifold = False):
 
 def CheckMesh(obj):
     '''
-    Checks the quality of a given mesh and outputs parameters into the console.
+    Checks the quality of a given <obj> mesh and outputs parameters to the console.
     '''
     print('\nChecking mesh...')
     me = obj.data
@@ -297,7 +296,7 @@ def CheckMesh(obj):
         if n>m:
             msg = msg[:m]
             n = m
-        out = '>>> ' + msg + (m-n)*'.' + ' ' + str(param)
+        out = '.. ' + msg + (m-n)*'.' + ' ' + str(param)
         print(out)
 
     face_lens = [len(x.vertices) for x in [p for p in me.polygons]]
@@ -416,9 +415,9 @@ def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50,
     # of rays to (probabilistically) validate that there actually is nothing closer than delta.
     # This script will keep running until maxiter iterations are surpassed or a point is found.
 
-    InfoMsg(' Attempting to find point inside mesh with delta = %s...'%(delta), True)
+    print('\nAttempting to find point inside mesh with delta = %s...'%(delta))
 
-    prog_msg = 'Running raycast...'
+    prog_msg = '.. Running raycast...'
     PrintProgressBar(0,maxiter, prefix = prog_msg, length = 40, fixedWidth=False)
     
     face_indices = GetRandomFaceIndices(obj, maxiter)
@@ -436,8 +435,8 @@ def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50,
                 PrintProgressBar(maxiter,maxiter, prefix = prog_msg, length = 40, fixedWidth=False)
                 mindiststr = "{:.6f}".format(mindist)
                 pointstr = ["{:.3f}".format(x) for x in point]
-                InfoMsg('Optimal point found at (%s, %s, %s) after %s iterations, min dist = %s'
-                        %(pointstr[0], pointstr[1], pointstr[2], i,mindiststr))
+                print('.. Optimal point found at (%s, %s, %s) \n.... after %s iterations, min dist = %s'
+                        %(pointstr[0], pointstr[1], pointstr[2], i, mindiststr))
                 return point
         i+=1
 
@@ -528,20 +527,20 @@ def GetInsidePointsForFaceIndices(obj, face_indices, delta = 1e-6, deltamax=1e-4
 
 
 
-def FindOptimalPoint(obj, points, no_rays):
-    '''Determines the point of <points> with the most space to surrounding <obj> geometry. '''
+# def FindOptimalPoint(obj, points, no_rays):
+#     '''Determines the point of <points> with the most space to surrounding <obj> geometry. '''
 
-    N = len(points)
-    no_hit_flags = [False for i in range(N)]
-    mindists = [0 for i in range(N)]
+#     N = len(points)
+#     no_hit_flags = [False for i in range(N)]
+#     mindists = [0 for i in range(N)]
 
-    for i, point in enumerate(points):
-        mindists[i], no_hit_flags[i] = GetMinDist(obj, point, no_rays)
+#     for i, point in enumerate(points):
+#         mindists[i], no_hit_flags[i] = GetMinDist(obj, point, no_rays)
 
-    mindist = min(mindists)
-    mindist_idx = mindists.index(mindist)
+#     mindist = min(mindists)
+#     mindist_idx = mindists.index(mindist)
 
-    return points[mindist_idx], mindist
+#     return points[mindist_idx], mindist
 
 
 
@@ -549,7 +548,7 @@ def GetMinDist(obj, ray_origin, no_rays):
     '''
     Casts <no_rays> random, uniformly distributed rays originating from <ray_origin> 
     out in 3D space within <obj> geometry to find the minium distance to the nearest surface. 
-    Also determines whether a  ray doesn't hit a face in no_hit_flag, which would 
+    Also sets the <no_hit_flag> to True when a single ray doesn't hit a face, which would 
     indicate a non-manifold mesh or incorrect face normals.
     '''
 
@@ -597,26 +596,25 @@ def GetRandomFaceIndices(obj, n_faces):
 
 
 
-# ██████  ██       ██████   ██████ ██   ██ ███    ███ ███████ ███████ ██   ██ 
-# ██   ██ ██      ██    ██ ██      ██  ██  ████  ████ ██      ██      ██   ██ 
-# ██████  ██      ██    ██ ██      █████   ██ ████ ██ █████   ███████ ███████ 
-# ██   ██ ██      ██    ██ ██      ██  ██  ██  ██  ██ ██           ██ ██   ██ 
-# ██████  ███████  ██████   ██████ ██   ██ ██      ██ ███████ ███████ ██   ██ 
-                                                                            
+# ██████  ██  ██████ ████████ ███████ 
+# ██   ██ ██ ██         ██    ██      
+# ██   ██ ██ ██         ██    ███████ 
+# ██   ██ ██ ██         ██         ██ 
+# ██████  ██  ██████    ██    ███████ 
+                                    
                                                                             
 
-def WriteBlockMesh(obj, ndim, buffer = 0.1):
+def WriteBlockMeshDict(obj, exportpath, ndim, buffer = 0.1):
     '''
-    Writes a BlockMeshDict of a given blender <obj>, 
+    Writes a BlockMeshDict in <exportpath> of a given blender <obj>, 
     creates a bounding box enlarged by <buffer> percent 
     (e.g. 0.1 means the bounding box is 10% bigger, aka 110% of the actual size),
     divides the largest dimension into <ndim> blocks and calculates the remaining 
     block divisions accordingly.
     '''
+
     bbdata = GetBoundingBox(obj)
 
-    outputfile = './outputfile.txt'
-    blockmeshinput = openfoam_files['blockmesh'] 
 
     dx = bbdata['dx']
     dy = bbdata['dy']
@@ -650,27 +648,41 @@ def WriteBlockMesh(obj, ndim, buffer = 0.1):
     bm_ymin = bm_ymax - div_y * delta_calc
     bm_zmin = bm_zmax - div_z * delta_calc
 
-    with open(blockmeshinput, 'r') as f:
+    print('\nCreating BlockMeshDict...')
+    print('.. Object boundary box dimensions:')
+    print('.... x_min = {xmin:.5f}, x_max = {xmax:.5f}, dx = {dx:.5f}'.format(xmin = bbdata['xmin'], xmax  = bbdata['xmax'], dx = dx))
+    print('.... y_min = {ymin:.5f}, y_max = {ymax:.5f}, dy = {dy:.5f}'.format(ymin = bbdata['ymin'], ymax  = bbdata['ymax'], dy = dy))
+    print('.... z_min = {zmin:.5f}, z_max = {zmax:.5f}, dz = {dz:.5f}'.format(zmin = bbdata['zmin'], zmax  = bbdata['zmax'], dz = dz))
+    print('.. BlockMesh for n_dim = %s, buffer = %s%%:'%(ndim, int(buffer*100)))
+    print('.... block length delta = {:.5f}'.format(delta_calc))
+    print('.... block divisions = (%s x %s x %s)'%(div_x, div_y, div_z))
+    print('.... no. blocks = %s '%(div_x*div_y*div_z))
+
+    # this is the 'reference file' located in sample project folder
+    blockmeshdict_inputfile = openfoam_files['blockmeshdict'] 
+
+    with open(blockmeshdict_inputfile, 'r') as f:
         data = f.read()
 
-        # calling another round operation here to get rid of floating point errors (0.12340000000000001 -> 0.1234)
-        # also round is OK here because the value has already bein ceiled towards its target...
-        data = data.replace('ofkey_xmin', str(round(bm_xmax, -O_calc)))
-        data = data.replace('ofkey_ymin', str(round(bm_ymax, -O_calc)))
-        data = data.replace('ofkey_zmin', str(round(bm_zmax, -O_calc)))
+        # calling another round() operation here to get rid of floating point errors (0.12340000000000001 -> 0.1234)
+        # also, round() is OK here instead of ceil() because the value has already bein ceiled towards its target.
+        data = data.replace('ofkey_xmin', str(round(bm_xmin, -O_calc)))
+        data = data.replace('ofkey_ymin', str(round(bm_ymin, -O_calc)))
+        data = data.replace('ofkey_zmin', str(round(bm_zmin, -O_calc)))
 
-        data = data.replace('ofkey_xmax', str(round(bm_xmin, -O_calc)))
-        data = data.replace('ofkey_ymax', str(round(bm_ymin, -O_calc)))
-        data = data.replace('ofkey_zmax', str(round(bm_zmin, -O_calc)))
+        data = data.replace('ofkey_xmax', str(round(bm_xmax, -O_calc)))
+        data = data.replace('ofkey_ymax', str(round(bm_ymax, -O_calc)))
+        data = data.replace('ofkey_zmax', str(round(bm_zmax, -O_calc)))
 
         data = data.replace('ofkey_blocksx', str(div_x))
         data = data.replace('ofkey_blocksy', str(div_y))
         data = data.replace('ofkey_blocksz', str(div_z))
 
-    with open(outputfile, 'w') as f:
+    exportfilepath = os.path.join(exportpath, 'blockMeshDict')
+    with open(exportfilepath, 'w') as f:
         f.write(data)
 
-
+    print('.. blockMeshDict written to %s'%(exportfilepath))
 
 
 
@@ -680,9 +692,6 @@ def Magnitude(x):
         return None
     return int(np.floor(np.log10(np.abs(x))))
 
-
-
-    
 
 
 def GetBoundingBox(obj):
@@ -719,14 +728,72 @@ def GetBoundingBox(obj):
 
 
 
+def WriteSnappyHexMeshDict(insidepoint, exportpath):
+    
+    shmdict_inputfile = openfoam_files['snappyhexmeshdict'] 
+
+    insidepos= [insidepoint[i] for i in range(len(insidepoint))]
+
+    insidepos_str = str(insidepos[0]) + ' ' + str(insidepos [1]) + ' ' + str(insidepos[2])
+    
+
+    print('\nWriting loctationInsideMesh into snappyHexMeshDict...')
+
+    with open(shmdict_inputfile, 'r') as f:
+        data = f.read()
+        data = data.replace('ofkey_locinmesh_xzy', insidepos_str)
+
+
+    inside_pos_string = [insidepos]
+    exportfilepath = os.path.join(exportpath, 'snappyHexMeshDict')
+    with open(exportfilepath, 'w') as f:
+        f.write(data)
+
+    print('.. snappyHexMeshDict written to %s'%(exportfilepath))
+
+
+# replace: 
+# ofkey_shm_geometry_entries
+# for each stl with:
+# '''
+#     inlet.stl
+#     {
+#         type triSurfaceMesh;
+#         name inlet;
+#     }
+#     exportfilepath = os.path.join(exportpath, 'snappyHexMeshDict')
+#     with open(exportfilepath, 'w') as f:
+#         f.write(data)
+# '''
+
+# replace
+# ofkey_shm_castalledMeshControlls_features
+# for each stl with:
+# '''
+#         {
+#             file "walls.eMesh";
+#             level 1;
+#         }
+# '''
+
+# replace
+# ofkey_shm_castalledMeshControlls_refinementSurfaces
+# '''
+#         walls
+#         {
+#             level (1 3);
+#         }
+# '''
 
 
 
-# ██ ███    ███ ██████   ██████  ██████  ████████ 
-# ██ ████  ████ ██   ██ ██    ██ ██   ██    ██    
-# ██ ██ ████ ██ ██████  ██    ██ ██████     ██    
-# ██ ██  ██  ██ ██      ██    ██ ██   ██    ██    
-# ██ ██      ██ ██       ██████  ██   ██    ██    
+
+
+# ██ ███    ███     ███████ ██   ██ ██████   ██████  ██████  ████████ 
+# ██ ████  ████     ██       ██ ██  ██   ██ ██    ██ ██   ██    ██    
+# ██ ██ ████ ██ ███ █████     ███   ██████  ██    ██ ██████     ██    
+# ██ ██  ██  ██     ██       ██ ██  ██      ██    ██ ██   ██    ██    
+# ██ ██      ██     ███████ ██   ██ ██       ██████  ██   ██    ██    
                                                 
 # FILE LOADING: Import all STL files 
 
@@ -745,77 +812,78 @@ def ImportSTLFiles(directory):
 
 
 
-
-# ███████ ██   ██ ██████   ██████  ██████  ████████ 
-# ██       ██ ██  ██   ██ ██    ██ ██   ██    ██    
-# █████     ███   ██████  ██    ██ ██████     ██    
-# ██       ██ ██  ██      ██    ██ ██   ██    ██    
-# ███████ ██   ██ ██       ██████  ██   ██    ██    
-                                                  
-                                                  
-# FILE EXPORT: Handled by SnappyhexmeshGUI Blender addon
-
-def ExportSnappyhexmeshGUI(exportpath, 
-                           obj, 
-                           clear_directory=True,
-                           no_cpus=1, 
-                           cell_length=0.1,
-                           surface_refinement_min=0,
-                           surface_refinement_max=0,
-                           feature_edge_level=0,
-                           cleanup_distance=1e-5):
+def ExportSTL(directory):
     '''
-    Handles export of <obj> to <exportpath> via the SnappyhexmeshGUI addon. 
+    Exports all objects in the scene to <directory> as stl
     '''
 
-    # This Exception handle should be obsolete as the check is done on script startup:
-    # try: # check if plugin is installed
-    #     bpy.context.scene.snappyhexmeshgui.bl_rna
-    # except:
-    #     raise Exception("STL2OpenFOAM Error: SnappyHexMeshGUI Blender addon is not installed!")
+    objs = bpy.context.scene.objects
+
+    if not objs:
+        print('Warning, no objects found in Blender scene!')
+        return
     
-    InfoMsg('Exporting mesh to SnappyHexMesh...', newline=True)
-    SetActive(obj) 
+    print(f'\nExporting stl files to {directory}...')
+    for i,obj in enumerate(objs):
+        # bpy.ops.object.select_all(action='DESELECT')
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+
+        obj_export_path = os.path.join(directory, obj.name + ".stl")
+
+        #legacy compatibility with old stl exporter
+        if bpy.app.version > (4, 0, 0):
+            bpy.ops.wm.stl_export(filepath = obj_export_path, ascii_format  = True, export_selected_objects  = True)
+        else: 
+            bpy.ops.export_mesh.stl(filepath=obj_export_path, ascii=True, use_selection=True)  # ASCII encoding
+        
+        print(f".. Exported {obj.name} ({i+1} of {len(objs)})...")
+
+        # Deselect the object after exporting
+        obj.select_set(False)
+
+    FixSTLnames(exportpath) 
+
+
+def FixSTLnames(directory):
+    '''
+    This script iterates through all stl files in a given <directory> and
+    'fixes' the naming inside the file, such that the filename is
+    written after 'solid' and 'endsolid' in the stl file.
+    '''
+    if not os.path.exists(directory):
+        print(f"The folder {directory} does not exist.")
+        return
     
-    if clear_directory: bpy.ops.object.snappyhexmeshgui_clean_case_dir()
+    stl_files = [f for f in os.listdir(directory) if f.lower().endswith('.stl')]
+    
+    if not stl_files:
+        print(f"No .stl files found in the folder {directory}.")
+        return
+    
+    print(f'\nProcessing stl files for correct naming inside file...')
+    for i,stl_file in enumerate(stl_files):
+        stl_path = os.path.join(directory, stl_file)
+        filename = os.path.splitext(stl_file)[0]
+        
+        # Read the content of the file
+        with open(stl_path, 'r') as file:
+            lines = file.readlines()
+        
+        # Change the first line to "solid FILENAME"
+        if lines and lines[0].startswith("solid"):
+            lines[0] = f"solid {filename}\n"
 
-    bpy.ops.object.snappyhexmeshgui_apply_locrotscale()
-    bpy.context.scene.snappyhexmeshgui.export_path = exportpath
-    bpy.context.scene.snappyhexmeshgui.number_of_cpus = no_cpus
-    bpy.context.scene.snappyhexmeshgui.cell_side_length = cell_length
+        # Change the first line to "solid FILENAME"
+        if lines and lines[-1].startswith("endsolid"):
+            lines[-1] = f"endsolid {filename}\n"
 
-    SetActive(obj)
-    bpy.context.object.shmg_surface_min_level = surface_refinement_min
-    bpy.context.object.shmg_surface_max_level = surface_refinement_max
-    bpy.context.object.shmg_feature_edge_level = feature_edge_level
-    # TODO for some reason, the following property has to be passed as a string. 
-    # There also is the property snappyhexmeshgui.merge_distance, but it gets ignored or
-    # overwritten by merge_distance_string. Potentially buggy, investigate in future. 
-    bpy.context.scene.snappyhexmeshgui.merge_distance_string = str(cleanup_distance) 
-    bpy.ops.object.snappyhexmeshgui_cleanup_meshes()
-
-    bpy.ops.object.snappyhexmeshgui_add_location_in_mesh_object()
-    SetActive(obj) # obj needs to be set active after adding empty in scene for loc in mesh
-    bpy.ops.object.snappyhexmeshgui_export()
-
-    InfoMsg('Export succesful.')
-
-
-
-# Note: This function has become obsolete due to the 
-# built in function bpy.ops.object.snappyhexmeshgui_clean_case_dir
-def ClearExportDirectory(exportpath):
-    '''A function to handle cleaning of the export directory. For now it deletes only .stl files'''
-    n = 0
-    for root, dir, files in os.walk(exportpath):
-        for file in files:
-            if file.lower().endswith('.stl'):
-                n+=1
-                os.remove(os.path.join(root,file))
-    InfoMsg('Deleted %s .stl files from export directory.'%(n))
-
-
-
+        
+        # Write the modified content back to the file
+        with open(stl_path, 'w') as file:
+            file.writelines(lines)
+        
+        print(f".. Processed {stl_file} ({i+1} of {len(stl_files)})...")
 
 
 
@@ -828,23 +896,31 @@ def ClearExportDirectory(exportpath):
 
 if __name__ == "__main__":
 
+    startTime = time.time()
+
     SetupArgparser()
 
     PrintNameWithVersion()
+
+    print('\nSTL2OPpenFOAM: Starting execution.')
+
 
     # CheckAndEnableAddonDependencies()
     
     DeleteAllBlenderData()
 
 
-    configpath = './config_stl.json'
-    configpath = 'D:/DATA2/GIT/IANUS/step2openfoam/config_stl.json'
+    # configpath = './config_stl.json'
+    # configpath = 'D:/DATA2/GIT/IANUS/step2openfoam/config_stl.json'
+
+    configpath = config_args['config']
     config = LoadConfig(configpath)
 
     # Import .stl files
     filepath = config['stl_import_filepath'] 
-    filepath = 'D:/DATA2/GIT/IANUS/step2openfoam/stl_geometries'
+    # filepath = 'D:/DATA2/GIT/IANUS/step2openfoam/stl_geometries'
     
+    exportpath = config['foam_export_filepath']
     
     ImportSTLFiles(filepath)
 
@@ -861,9 +937,10 @@ if __name__ == "__main__":
         np.random.seed(seed)
         random.seed(seed)
 
+    ndim = config['blockmesh_ndim']
 
+    WriteBlockMeshDict(obj, exportpath = exportpath, ndim=ndim)
 
-    # obj = GetFirstMeshInScene()
 
     # Find the point inside the mesh
     delta = config['pointInMesh_delta']
@@ -878,13 +955,34 @@ if __name__ == "__main__":
         no_rays_secondary=no_rays_secondary
         )
 
+
     # The "location in mesh" for snappyhexmesh is set to where the 3D cursor is
-    Set3DCursorToLocation(obj, optpoint)    
+    # Set3DCursorToLocation(obj, optpoint)    
 
-
-    WriteBlockMesh(obj,65)
+    WriteSnappyHexMeshDict(optpoint, exportpath = exportpath)
 
     SeparateGeometryByMaterialGroups(obj)
+
+    ExportSTL(exportpath)
+
+    deltat = time.time()- startTime 
+    print('\nSTL2OPpenFOAM: Execution finished. (t={:.3f}s)\n'.format(deltat))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     # # Export via snappyhexmeshgui
     # exportpath = config['snappyhex_export_filepath'] 
