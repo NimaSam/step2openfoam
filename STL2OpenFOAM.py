@@ -18,7 +18,7 @@ bl_info = {
     "name" : "STL2OpenFOAM",
     "description" : "A pipeline for creating OpenFOAM data from .STL files",
     "author" : "Lukas Kilian",
-    "version" : (0, 1, 0),
+    "version" : (0, 1, 1),
     "blender" : (4, 0, 0),
     "support" : "COMMUNITY",
 }
@@ -38,7 +38,7 @@ version_string = 'v' + str(bl_info['version'][0]) + \
                  '.' + str(bl_info['version'][2])
 
 # creating global variable to store arguments of argparser
-config_args = {}
+argparse_args = {}
 
 
 
@@ -113,15 +113,17 @@ def PrintProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
 
 def _path_arg(configpath):
     if not os.path.exists(configpath):
-        raise argparse.ArgumentTypeError('Invalid path, config file could not be found')
+        raise argparse.ArgumentTypeError('Invalid path, directory does not exist')
     return configpath
 
 
 def SetupArgparser():
     parser = argparse.ArgumentParser(description='STL 2 OpenFOAM pipeline ' + version_string, prog='STL2OpenFOAM')
     parser.add_argument('config_path', help = 'Path to the config file', type = _path_arg)
+    parser.add_argument('-stl', help = 'Path to stl files. If this points to a file, import only that file, if it points to a folder, import all files in the folder.', type = _path_arg)
     args = parser.parse_args()
-    config_args['config'] = args.config_path
+    argparse_args['config'] = args.config_path
+    argparse_args['stl'] = args.stl
 
 
 
@@ -227,7 +229,6 @@ def JoinAllMeshesAndAssignMaterialSlots():
     # if len(objs) == 1: #if there is just one object, return it
     #     return objs[0]
     
-    
     for obj in objs:
         mat = bpy.data.materials.get(obj.name)
         if not mat:
@@ -237,16 +238,15 @@ def JoinAllMeshesAndAssignMaterialSlots():
         obj.data.materials.append(mat)
 
     target = objs[0] #join all objects into the first one
-
     target.name = 'joined_geometry' #setting names just for clarity inside blender
     target.data.name = 'data_joined_geometry'
 
-    for obj in objs:
-        obj.select_set(True)
-
-    bpy.context.view_layer.objects.active = target
-
-    bpy.ops.object.join()
+    # join all objects only if there is more than one     
+    if len(objs)>1:
+        for obj in objs:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = target
+        bpy.ops.object.join()
 
     return target
 
@@ -320,7 +320,11 @@ def CheckMesh(obj):
     no_non_manifold = len(non_manifold_verts)
 
     checkMeshPrint('Non manifold', no_non_manifold)  
+
+    is_watertight = 'OK' if no_non_manifold == 0 else 'FAILED'
+    print('.. Geometry watertightness check: ' + is_watertight )
     
+
 
 
 def SeparateGeometryByMaterialGroups(obj):
@@ -435,7 +439,7 @@ def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50,
                 PrintProgressBar(maxiter,maxiter, prefix = prog_msg, length = 40, fixedWidth=False)
                 mindiststr = "{:.6f}".format(mindist)
                 pointstr = ["{:.3f}".format(x) for x in point]
-                print('.. Optimal point found at (%s, %s, %s) \n.... after %s iterations, min dist = %s'
+                print('.. Optimal point found at (%s, %s, %s) after %s iterations, min dist = %s'
                         %(pointstr[0], pointstr[1], pointstr[2], i, mindiststr))
                 return point
         i+=1
@@ -487,12 +491,11 @@ def IterRayCast(obj, ray_origin, ray_direction, face_index = 0, delta = 1e-6, de
         if iter < itermax: # and if we didnt exceed max. no. iterations ...
             if delta < deltamax: # and our delta is within the threshold...
 
-                iter += 1 # ... then increase our iteration counter
-                delta *= 2 # ... double the threshold
+                iter += 1 # ... then increase our iteration counter,
+                delta *= 2 # ... double the threshold,
                 
-                print('IterRayCast: The ray case hit the same face it was cast from.' \
-                      'Increasing delta and trying again, iteration = ' \
-                      + str(iter) + ', delta = ' + str(delta) + '...')
+                print('IterRayCast: The ray cast hit the same face it was cast from. ' \
+                      f'Increasing delta and trying again, iteration = {iter}, delta = {delta}...')
                 
                 # ... and iteratively repeat this function until a result is found or our conditions are violated.
                 ray_hit_location, iter, ray_origin_shifted, result, index = \
@@ -500,17 +503,17 @@ def IterRayCast(obj, ray_origin, ray_direction, face_index = 0, delta = 1e-6, de
                 
             else: 
                 Set3DCursorToLocation(obj,ray_origin)
-                print('Face idx = ' + str(face_index) + ', 3D Cursor set to face where error occurred.')
+                print(f'Face idx = {face_index}, 3D Cursor set to face where error occurred.')
                 raise Exception('IterRayCast Error: The raycast reached the maximum delta threshold. ' \
                                 'Try increasing the maximum threshold but validate that the point is actually inside the geometry.')
         else: 
             Set3DCursorToLocation(obj,ray_origin)
-            print('Face idx = ' + str(face_index) + ', 3D Cursor set to face where error occurred.')
-            raise Exception('IterRayCast Error: Maximum number of iterations reached (itermax = ' + str(itermax) + '). ' \
+            print(f'Face idx = {face_index}, 3D  Cursor set to face where error occurred.')
+            raise Exception(f'IterRayCast Error: Maximum number of iterations reached (itermax = {itermax}). ' \
                             'Try increasing maximum number of iterations.')
     elif not result: 
         Set3DCursorToLocation(obj,ray_origin)
-        print('Face idx = ' + str(face_index) + ', 3D Cursor set to face where error occurred.')
+        print(f'Face idx = {face_index}, 3D  Cursor set to face where error occurred.')
         raise Exception('IterRayCast Error: The raycast did not hit a face. ' \
                         'This can be because the mesh is not manifold or because the face normals are inverted.')
 
@@ -654,7 +657,7 @@ def WriteBlockMeshDict(obj, exportpath, ndim, buffer = 0.1):
     print('.... y_min = {ymin:.5f}, y_max = {ymax:.5f}, dy = {dy:.5f}'.format(ymin = bbdata['ymin'], ymax  = bbdata['ymax'], dy = dy))
     print('.... z_min = {zmin:.5f}, z_max = {zmax:.5f}, dz = {dz:.5f}'.format(zmin = bbdata['zmin'], zmax  = bbdata['zmax'], dz = dz))
     print('.. BlockMesh for n_dim = %s, buffer = %s%%:'%(ndim, int(buffer*100)))
-    print('.... block length delta = {:.5f}'.format(delta_calc))
+    print('.... block length = {:.5f}'.format(delta_calc))
     print('.... block divisions = (%s x %s x %s)'%(div_x, div_y, div_z))
     print('.... no. blocks = %s '%(div_x*div_y*div_z))
 
@@ -729,6 +732,9 @@ def GetBoundingBox(obj):
 
 
 def WriteSnappyHexMeshDict(insidepoint, exportpath):
+    '''
+    Take a sample SHM dict and copies it to the export directory, looking for the ofkey_ inside the file
+    '''
     
     shmdict_inputfile = openfoam_files['snappyhexmeshdict'] 
 
@@ -750,6 +756,34 @@ def WriteSnappyHexMeshDict(insidepoint, exportpath):
         f.write(data)
 
     print('.. snappyHexMeshDict written to %s'%(exportfilepath))
+
+
+
+def UpdateSnappyHexMeshDict(insidepoint, shmdict_path):
+    '''
+    Takes an existing snappyHexMeshDict in <shmdict_path> 
+    and replaces the locationInMesh attribute with <insidepoint>.
+    '''
+    with open(shmdict_path, 'r') as f:
+        data = f.read()
+
+    idx_locInMesh = data.find('locationInMesh')
+    _bracketStart = data[idx_locInMesh:].find('(')
+    _bracketEnd = data[idx_locInMesh:].find(')')
+
+    idx_locInMeshStart = idx_locInMesh + _bracketStart + 1
+    idx_locInMeshEnd = idx_locInMesh + _bracketEnd - 1
+
+    # oldLocInMesh = data[idx_locInMeshStart:idx_locInMeshEnd]
+
+    insidepos= [insidepoint[i] for i in range(len(insidepoint))]
+    insidepos_str = str(insidepos[0]) + ' ' + str(insidepos [1]) + ' ' + str(insidepos[2])
+
+    newdata = data[:idx_locInMeshStart] + insidepos_str + data[idx_locInMeshEnd:]
+
+    with open(shmdict_path, 'w') as f:
+        f.write(newdata)
+
 
 
 # replace: 
@@ -798,11 +832,26 @@ def WriteSnappyHexMeshDict(insidepoint, exportpath):
 # FILE LOADING: Import all STL files 
 
 
-def ImportSTLFiles(directory):
-    '''Imports all stl files which are immediate children in directory <directory> into the scene'''
+def ImportSTLFiles(directory, singlefile = False):
+    '''
+    Imports all stl files which are immediate children in directory <directory> into the scene.
+    The flag <singlefile> tells the script to just import one file, otherwise it expects the
+    input to be a folder and attempts to import all stl files in that directory. 
+    '''
+    directory = os.path.abspath(directory)
+
     if not os.path.exists(directory):
         raise Exception('Directory could not be found, check in json and try again! (%s)'%(directory))
-    stlfiles = [file for file in os.listdir(directory) if file.lower().endswith('.stl')]
+    
+    if singlefile:
+        if not directory.lower().endswith('.stl'):
+            raise Exception('File could not be found or wrong filetype specified, expected single .stl file! (%s)'%(directory))
+        else:
+            stlfiles = [directory] #make stlfiles contain just the single file 
+
+    else:
+        stlfiles = [file for file in os.listdir(directory) if file.lower().endswith('.stl')]
+
     if not stlfiles:
         raise Exception('No STL Files found in directory \'%s\', check directory and try again!'%(directory))
 
@@ -812,7 +861,8 @@ def ImportSTLFiles(directory):
 
 
 
-def ExportSTL(directory):
+
+def ExportSTL(directory, do_fix_filenames = True):
     '''
     Exports all objects in the scene to <directory> as stl
     '''
@@ -823,6 +873,8 @@ def ExportSTL(directory):
         print('Warning, no objects found in Blender scene!')
         return
     
+    exportpaths = []
+
     print(f'\nExporting stl files to {directory}...')
     for i,obj in enumerate(objs):
         # bpy.ops.object.select_all(action='DESELECT')
@@ -837,110 +889,98 @@ def ExportSTL(directory):
         else: 
             bpy.ops.export_mesh.stl(filepath=obj_export_path, ascii=True, use_selection=True)  # ASCII encoding
         
+        exportpaths.append(obj_export_path)
+
         print(f".. Exported {obj.name} ({i+1} of {len(objs)})...")
 
         # Deselect the object after exporting
         obj.select_set(False)
 
-    FixSTLnames(exportpath) 
+    if do_fix_filenames:
+        FixSTLnames(exportpaths) 
 
 
-def FixSTLnames(directory):
+
+
+def FixSTLnames(filelist):
     '''
     This script iterates through all stl files in a given <directory> and
     'fixes' the naming inside the file, such that the filename is
     written after 'solid' and 'endsolid' in the stl file.
     '''
-    if not os.path.exists(directory):
-        print(f"The folder {directory} does not exist.")
-        return
-    
-    stl_files = [f for f in os.listdir(directory) if f.lower().endswith('.stl')]
+
+    for file in filelist:
+        if not os.path.exists(file):
+            print(f"The file {file} does not exist.")
+            return
+
+    stl_files = [f for f in filelist if f.lower().endswith('.stl')]
     
     if not stl_files:
-        print(f"No .stl files found in the folder {directory}.")
+        print(f"No .stl files found for given file list.")
         return
     
     print(f'\nProcessing stl files for correct naming inside file...')
     for i,stl_file in enumerate(stl_files):
-        stl_path = os.path.join(directory, stl_file)
-        filename = os.path.splitext(stl_file)[0]
+        # directory = os.path.dirname(stl_file)
+        # stl_path = os.path.join(directory, stl_file)
+        print(f".. Processing {stl_file} ({i+1} of {len(stl_files)})...")
+
+        filename = os.path.splitext(os.path.basename(stl_file))[0]
         
-        # Read the content of the file
-        with open(stl_path, 'r') as file:
+        with open(stl_file, 'r') as file:
             lines = file.readlines()
         
-        # Change the first line to "solid FILENAME"
         if lines and lines[0].startswith("solid"):
             lines[0] = f"solid {filename}\n"
 
-        # Change the first line to "solid FILENAME"
         if lines and lines[-1].startswith("endsolid"):
             lines[-1] = f"endsolid {filename}\n"
 
-        
-        # Write the modified content back to the file
-        with open(stl_path, 'w') as file:
+        with open(stl_file, 'w') as file:
             file.writelines(lines)
-        
-        print(f".. Processed {stl_file} ({i+1} of {len(stl_files)})...")
-
-
-
-
-# ███    ███  █████  ██ ███    ██ 
-# ████  ████ ██   ██ ██ ████   ██ 
-# ██ ████ ██ ███████ ██ ██ ██  ██ 
-# ██  ██  ██ ██   ██ ██ ██  ██ ██ 
-# ██      ██ ██   ██ ██ ██   ████ 
-
-if __name__ == "__main__":
-
-    startTime = time.time()
-
-    SetupArgparser()
-
-    PrintNameWithVersion()
-
-    print('\nSTL2OPpenFOAM: Starting execution.')
-
-
-    # CheckAndEnableAddonDependencies()
     
-    DeleteAllBlenderData()
+    print('.. Processing finished.')
 
 
-    # configpath = './config_stl.json'
-    # configpath = 'D:/DATA2/GIT/IANUS/step2openfoam/config_stl.json'
 
-    configpath = config_args['config']
-    config = LoadConfig(configpath)
 
-    # Import .stl files
+
+
+
+
+#  █████  ██    ██ ██   ██ ██ ██      ██  █████  ██████  ██    ██ 
+# ██   ██ ██    ██  ██ ██  ██ ██      ██ ██   ██ ██   ██  ██  ██  
+# ███████ ██    ██   ███   ██ ██      ██ ███████ ██████    ████   
+# ██   ██ ██    ██  ██ ██  ██ ██      ██ ██   ██ ██   ██    ██    
+# ██   ██  ██████  ██   ██ ██ ███████ ██ ██   ██ ██   ██    ██    
+                                                                
+# these are just scripts that are grouped in the main file for better readability, 
+# but don't have an intrinstic 'function' beyond that                                                            
+
+
+def LoadSTLFilesToScene(config):
+    single_file_import = False
     filepath = config['stl_import_filepath'] 
-    # filepath = 'D:/DATA2/GIT/IANUS/step2openfoam/stl_geometries'
+
+    if argparse_args['stl']:
+        filepath = argparse_args['stl']
     
-    exportpath = config['foam_export_filepath']
+    if filepath.lower().endswith('.stl'):
+        single_file_import = True
     
-    ImportSTLFiles(filepath)
+    ImportSTLFiles(filepath, single_file_import)
 
-    obj = JoinAllMeshesAndAssignMaterialSlots()
-    CleanMesh(obj, delete_non_manifold=True)
-    CheckMesh(obj)
+    return single_file_import
 
-    # BlenderApplyRotScale() # apply the custom scale to objs
 
-    # Find point inside mesh
+
+def FindPointInsideMesh(config):
     deterministic = config['pointInMesh_deterministic']
     seed = config['pointInMesh_seed']
     if deterministic:
         np.random.seed(seed)
         random.seed(seed)
-
-    ndim = config['blockmesh_ndim']
-
-    WriteBlockMeshDict(obj, exportpath = exportpath, ndim=ndim)
-
 
     # Find the point inside the mesh
     delta = config['pointInMesh_delta']
@@ -954,19 +994,81 @@ if __name__ == "__main__":
         no_rays=no_rays, 
         no_rays_secondary=no_rays_secondary
         )
+    
+    return optpoint
 
 
-    # The "location in mesh" for snappyhexmesh is set to where the 3D cursor is
-    # Set3DCursorToLocation(obj, optpoint)    
 
-    WriteSnappyHexMeshDict(optpoint, exportpath = exportpath)
 
+
+
+# ███    ███  █████  ██ ███    ██ 
+# ████  ████ ██   ██ ██ ████   ██ 
+# ██ ████ ██ ███████ ██ ██ ██  ██ 
+# ██  ██  ██ ██   ██ ██ ██  ██ ██ 
+# ██      ██ ██   ██ ██ ██   ████ 
+
+
+if __name__ == "__main__":
+
+    # Setup
+    startTime = time.time()
+    SetupArgparser()
+    PrintNameWithVersion()
+    print('\nSTL2OpenFOAM: Starting execution.')
+
+
+    # Clear all Data from Blender file
+    DeleteAllBlenderData()
+
+
+    # Load Config file
+    configpath = argparse_args['config']
+    config = LoadConfig(configpath)
+
+
+    # Load all STL files into the scene
+    LoadSTLFilesToScene(config)
+
+
+    # Join all loaded STL files into one file 
+    obj = JoinAllMeshesAndAssignMaterialSlots()
+
+
+    # Clean the geometry of the fused file
+    CleanMesh(obj, delete_non_manifold=True)
+
+
+    # Check resulting mesh
+    CheckMesh(obj)
+
+
+    # Find point inside mesh
+    optpoint = FindPointInsideMesh(config)
+
+
+    # Generate and write the BlockMeshDict
+    ndim = config['blockmesh_ndim']
+    buffer = config['blockmesh_buffer']
+    exportpath = config['export_filepath']
+    WriteBlockMeshDict(obj, exportpath = exportpath, ndim = ndim, buffer = buffer)
+
+
+    # Update locationInMesh for a supplied snappyHexMeshDict
+    UpdateSnappyHexMeshDict(optpoint, shmdict_path=config['snappyHexMeshDict_filepath'])
+
+
+    # Separate the fused geometry into its components (e.g. wall, inlet, outlet etc.)
     SeparateGeometryByMaterialGroups(obj)
 
-    ExportSTL(exportpath)
 
-    deltat = time.time()- startTime 
-    print('\nSTL2OPpenFOAM: Execution finished. (t={:.3f}s)\n'.format(deltat))
+    # Exports all objects in the scene to exportpath
+    ExportSTL(exportpath, do_fix_filenames = True)
+
+
+    # Finish Execution
+    delta_t = time.time() - startTime 
+    print('\nSTL2OPpenFOAM: Execution finished. (t={:.3f}s)\n'.format(delta_t))
 
 
 

@@ -1,0 +1,19 @@
+{
+    "stl_import_filepath":"./generated/Ladder_mold_assy_2_negative_IANUS.stl",
+    
+    
+    "snappyHexMeshDict_filepath":"./export/snappyHexMeshDict",
+
+    "export_filepath":"./export/",
+
+    "blockmesh_ndim":100,
+    "blockmesh_buffer":0.1,
+
+    "pointInMesh_delta":0.01,
+    "pointInMesh_deterministic":0,
+    "pointInMesh_maxiter":500,
+    "pointInMesh_rays_primary":50,
+    "pointInMesh_rays_secondary":5000,
+    "pointInMesh_seed":42
+ }
+
