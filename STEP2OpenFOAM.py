@@ -43,7 +43,8 @@ from stl2foam import read_stl_file as ReadSTLAsVTK
 # specifies the location of the sample project input files with respective keys set in the file.
 # this script works by looking for specific keys "ofkey_XXXX" and replacing the necessary values.
 openfoam_files = {}
-openfoam_files['blockmeshdict'] = './sample_project/system/blockMeshDict'
+# openfoam_files['blockmeshdict'] = './sample_project/system/blockMeshDict'
+openfoam_files['blockmeshdict'] = './blockMeshDict'
 openfoam_files['snappyhexmeshdict'] = './sample_project/system/snappyHexMeshDict'
 
 
@@ -689,6 +690,8 @@ def WriteBlockMeshDict(obj, exportpath, ndim, buffer = 0.1):
 
     # this is the 'reference file' located in sample project folder
     blockmeshdict_inputfile = openfoam_files['blockmeshdict'] 
+    # blockmeshdict_inputfile = openfoam_files['blockmeshdict'] 
+    
 
     with open(blockmeshdict_inputfile, 'r') as f:
         data = f.read()
@@ -1083,6 +1086,8 @@ if __name__ == "__main__":
 
     # Generate directory and fily paths
     project_dir = config['project_directory']
+
+
     step_dir = os.path.join(project_dir, 'step/')
     generated_dir = os.path.join(project_dir, 'generated/')
     # if not os.path.exists(generated_dir):
