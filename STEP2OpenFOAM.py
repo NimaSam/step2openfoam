@@ -3,6 +3,18 @@
 # STL 2 OpenFOAM Pipeline
 # Date of creation: 23.08.2024
 
+# info about this script 
+bl_info = {
+    "name" : "STEP2OpenFOAM",
+    "description" : "A pipeline for creating OpenFOAM data from .STL files",
+    "author" : "Lukas Kilian",
+    "version" : (0, 2, 0),
+    "blender" : (4, 0, 0),
+    "support" : "COMMUNITY",
+}
+
+
+
 import os
 import bpy
 import sys
@@ -13,21 +25,27 @@ import argparse
 import mathutils
 import numpy as np
 
-# info about this script 
-bl_info = {
-    "name" : "STL2OpenFOAM",
-    "description" : "A pipeline for creating OpenFOAM data from .STL files",
-    "author" : "Lukas Kilian",
-    "version" : (0, 1, 1),
-    "blender" : (4, 0, 0),
-    "support" : "COMMUNITY",
-}
+
+# Dennis' Repo step2stl
+sys.path.append('./../step2stl')
+from step2stl import *
+from step2stl import generateSTL as GenerateSTL 
+
+
+# # Nima's Repo stl2foam
+sys.path.append('./../stl2foam')
+from stl2foam import *
+from stl2foam import compute_edges as ComputeAndSaveFeatureEdges
+from stl2foam import read_stl_file as ReadSTLAsVTK
+
+
 
 # specifies the location of the sample project input files with respective keys set in the file.
 # this script works by looking for specific keys "ofkey_XXXX" and replacing the necessary values.
 openfoam_files = {}
 openfoam_files['blockmeshdict'] = './sample_project/system/blockMeshDict'
 openfoam_files['snappyhexmeshdict'] = './sample_project/system/snappyHexMeshDict'
+
 
 # the length of the prefix string before printing the progress bar
 progressbar_prefix_len = 30 
@@ -42,6 +60,8 @@ argparse_args = {}
 
 
 
+
+
 # ███    ███ ██ ███████  ██████ 
 # ████  ████ ██ ██      ██      
 # ██ ████ ██ ██ ███████ ██      
@@ -53,7 +73,7 @@ argparse_args = {}
 def InfoMsg(msg, newline=False):
     '''Utility script to print unified info messages in the console.'''
     if newline: print('')
-    print('## STL2OpenFoam Info: ' +msg)
+    print('## STEP2OpenFoam Info: ' +msg)
     # print('')
 
 
@@ -63,11 +83,11 @@ def PrintNameWithVersion():
     n = len(version_string)
     nmax = 32
     print(r'''   
-  ___ _____ _    ___ ___                 ___ ___   _   __  __ 
- / __|_   _| |  |_  ) _ \ _ __  ___ _ _ | __/ _ \ /_\ |  \/  |
- \__ \ | | | |__ / / (_) | '_ \/ -_) ' \| _| (_) / _ \| |\/| |
- |___/ |_| |____/___\___/| .__/\___|_||_|_| \___/_/ \_\_|  |_|
-                         |_|  ''' 
+  ___ _            ___ ___                 ___ ___   _   __  __ 
+ / __| |_ ___ _ __|_  ) _ \ _ __  ___ _ _ | __/ _ \ /_\ |  \/  |
+ \__ \  _/ -_) '_ \/ / (_) | '_ \/ -_) ' \| _| (_) / _ \| |\/| |
+ |___/\__\___| .__/___\___/| .__/\___|_||_|_| \___/_/ \_\_|  |_|
+             |_|           |_|  ''' 
           + (nmax-n)*' ' + version_string + '\n')
 
 
@@ -75,7 +95,7 @@ def PrintNameWithVersion():
 def LoadConfig(configpath):
     '''Loads the config file and returns the data.'''
     if not os.path.exists(configpath):
-        raise Exception('STL2OpenFOAM Error: Config could not be found! Check configpath in main function!')
+        raise Exception('STEP2OpenFOAM Error: Config could not be found! Check configpath in main function!')
 
     with open(configpath, 'r') as f:
         config = json.load(f)
@@ -118,7 +138,7 @@ def _path_arg(configpath):
 
 
 def SetupArgparser():
-    parser = argparse.ArgumentParser(description='STL 2 OpenFOAM pipeline ' + version_string, prog='STL2OpenFOAM')
+    parser = argparse.ArgumentParser(description='STL 2 OpenFOAM pipeline ' + version_string, prog='STEP2OpenFoam')
     parser.add_argument('config_path', help = 'Path to the config file', type = _path_arg)
     parser.add_argument('-stl', help = 'Path to stl files. If this points to a file, import only that file, if it points to a folder, import all files in the folder.', type = _path_arg)
     args = parser.parse_args()
@@ -168,10 +188,10 @@ def Reset3DCursor():
 #     meshes = [obj for obj in objs if obj.type == 'MESH']
 
 #     if len(meshes) == 0:
-#         print('STL2OpenFoam Warning: No mesh found in Scene!')
+#         print('STEP2OpenFoam Warning: No mesh found in Scene!')
 #         return None
 #     elif len(meshes) > 1:
-#         print('STL2OpenFoam Warning: More than 1 object found after import, returning first object!')
+#         print('STEP2OpenFoam Warning: More than 1 object found after import, returning first object!')
     
 #     obj = meshes[0]
 #     return obj
@@ -210,6 +230,7 @@ def DeleteAllBlenderData():
     collection_names = [col.name for col in bpy.data.collections]
     for name in collection_names:
         bpy.data.collections.remove(bpy.data.collections[name])
+    print('\nDeleting all Blender data...\n..', end=' ')
     BlenderPurgeOrphans()
 
 
@@ -253,7 +274,7 @@ def JoinAllMeshesAndAssignMaterialSlots():
 
 
 
-def CleanMesh(obj, delete_non_manifold = False):
+def CleanMesh(obj, remove_doubles_threshold=1e-7, delete_non_manifold = False):
     '''
     Cleans the mesh of an <obj>. Specifically, remove doubles and merge tiny gaps, 
     recalculate normals, delete inside faces, delete loose vertices, edges and faces.
@@ -263,14 +284,19 @@ def CleanMesh(obj, delete_non_manifold = False):
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.mode_set(mode = 'EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.mesh.remove_doubles(threshold=1e-7)
+    print(f'.. Merging double vertices with delta = {remove_doubles_threshold}..\n....', end = " ")
+    bpy.ops.mesh.remove_doubles(threshold=remove_doubles_threshold)
+    print('.. Recalculating normals..')
     bpy.ops.mesh.normals_make_consistent(inside=False)
+    print(f'.. Deleting loose geometry..\n....', end = " ")
     bpy.ops.mesh.delete_loose(use_faces=True)
     bpy.ops.mesh.select_all(action='DESELECT')
+    print(f'.. Deleting interior geometry..')
     bpy.ops.mesh.select_interior_faces()
     bpy.ops.mesh.delete(type='FACE')
 
     if delete_non_manifold:
+        print('.. Deleting non-manifold geometry..')
         bpy.ops.mesh.select_mode(type='VERT')
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.mesh.select_non_manifold()
@@ -444,7 +470,7 @@ def SearchForPointWithThreshold(obj, delta = 1e-5, maxiter = 1000, no_rays = 50,
                 return point
         i+=1
 
-    raise Exception('STL2OpenFOAM Error: No points found within %s iterations. ' \
+    raise Exception('STEP2OpenFOAM Error: No points found within %s iterations. ' \
                     'Try increasing maximum interatios or decreasing delta threshold.'%(maxiter))
 
 
@@ -457,7 +483,7 @@ def FindInsidePoint(obj, face_index = 0, delta = 1e-6, deltamax= 1e-4):
 
     # check whether specified face_index is out of bounds for given obj
     try: face = mesh.polygons[face_index]
-    except: raise Exception('STL2OpenFOAM Error: Face Index out of bounds for given object. ' \
+    except: raise Exception('STEP2OpenFOAM Error: Face Index out of bounds for given object. ' \
                             'Try decreasing face index. (face_index = %s, No. polygons = %s)'
                             %(face_index,len(mesh.polygons)))
     
@@ -681,11 +707,11 @@ def WriteBlockMeshDict(obj, exportpath, ndim, buffer = 0.1):
         data = data.replace('ofkey_blocksy', str(div_y))
         data = data.replace('ofkey_blocksz', str(div_z))
 
-    exportfilepath = os.path.join(exportpath, 'blockMeshDict')
-    with open(exportfilepath, 'w') as f:
+    # exportfilepath = os.path.join(exportpath, 'blockMeshDict')
+    with open(exportpath, 'w') as f:
         f.write(data)
 
-    print('.. blockMeshDict written to %s'%(exportfilepath))
+    print('.. blockMeshDict written to \n.... %s'%(exportpath))
 
 
 
@@ -781,6 +807,7 @@ def UpdateSnappyHexMeshDict(insidepoint, shmdict_path):
 
     newdata = data[:idx_locInMeshStart] + insidepos_str + data[idx_locInMeshEnd:]
 
+    print(f'\nUpdating locationInMesh in snappyHexMeshDict in \n.. {shmdict_path}...')
     with open(shmdict_path, 'w') as f:
         f.write(newdata)
 
@@ -840,6 +867,8 @@ def ImportSTLFiles(directory, singlefile = False):
     '''
     directory = os.path.abspath(directory)
 
+    print('\nImporting STL files..')
+
     if not os.path.exists(directory):
         raise Exception('Directory could not be found, check in json and try again! (%s)'%(directory))
     
@@ -855,7 +884,8 @@ def ImportSTLFiles(directory, singlefile = False):
     if not stlfiles:
         raise Exception('No STL Files found in directory \'%s\', check directory and try again!'%(directory))
 
-    for stlfile in stlfiles:
+    for i,stlfile in enumerate(stlfiles):
+        print(f'.. Importing {stlfile} ({i} of {len(stlfiles)})... \n....',end='')
         stlfilepath = os.path.join(directory, stlfile)
         bpy.ops.wm.stl_import(filepath=stlfilepath) 
 
@@ -881,7 +911,8 @@ def ExportSTL(directory, do_fix_filenames = True):
         bpy.context.view_layer.objects.active = obj
         obj.select_set(True)
 
-        obj_export_path = os.path.join(directory, obj.name + ".stl")
+        # obj_export_path = os.path.join(directory, obj.name + ".stl")
+        obj_export_path = directory
 
         #legacy compatibility with old stl exporter
         if bpy.app.version > (4, 0, 0):
@@ -895,6 +926,8 @@ def ExportSTL(directory, do_fix_filenames = True):
 
         # Deselect the object after exporting
         obj.select_set(False)
+
+    print('.. Export finished.')
 
     if do_fix_filenames:
         FixSTLnames(exportpaths) 
@@ -924,7 +957,7 @@ def FixSTLnames(filelist):
     for i,stl_file in enumerate(stl_files):
         # directory = os.path.dirname(stl_file)
         # stl_path = os.path.join(directory, stl_file)
-        print(f".. Processing {stl_file} ({i+1} of {len(stl_files)})...")
+        print(f".. Processing {os.path.basename(stl_file)} ({i+1} of {len(stl_files)})...")
 
         filename = os.path.splitext(os.path.basename(stl_file))[0]
         
@@ -959,9 +992,8 @@ def FixSTLnames(filelist):
 # but don't have an intrinstic 'function' beyond that                                                            
 
 
-def LoadSTLFilesToScene(config):
+def LoadSTLFilesToScene(filepath):
     single_file_import = False
-    filepath = config['stl_import_filepath'] 
 
     if argparse_args['stl']:
         filepath = argparse_args['stl']
@@ -998,7 +1030,29 @@ def FindPointInsideMesh(config):
     return optpoint
 
 
+def GetSTEPFileFromDir(step_dir):
+    '''
+    Retrieves the step file from project/step/. 
+    Throws an error if no - or if multiple STEP files are supplied.
+    '''
+    stepfiles = [f for f in os.listdir(step_dir) if f.lower().endswith('stp') or f.lower().endswith('step')]
+    if not stepfiles:
+        raise Exception('No STEP file supplied in folder .../project/generated/. Provide an input STEP file and try again!')
+    if len(stepfiles)>1:
+        raise Exception('More than one STEP file supplied in folder .../project/generated/. Provide just one STEP file and try again!')
+    stepfilepath = os.path.join(step_dir, stepfiles[0])
+    return stepfilepath
 
+
+def CalculateVTKEdges(cleaned_stl_path, trisurface_dir):
+    '''
+    Extracts and saves feature edges from <stl> as vtk to <dir>.
+    '''
+    print('\nExtracting feature edges...')
+    vtk_mesh = ReadSTLAsVTK(cleaned_stl_path)
+    ComputeAndSaveFeatureEdges(vtk_mesh, tri_dir = trisurface_dir)
+    print('.. Feature extraction completed.')
+    print(f'.. vtk file saved to {trisurface_dir}')
 
 
 
@@ -1015,7 +1069,7 @@ if __name__ == "__main__":
     startTime = time.time()
     SetupArgparser()
     PrintNameWithVersion()
-    print('\nSTL2OpenFOAM: Starting execution.')
+    print('\nSTEP2OpenFOAM: Starting execution.')
 
 
     # Clear all Data from Blender file
@@ -1027,8 +1081,41 @@ if __name__ == "__main__":
     config = LoadConfig(configpath)
 
 
+    # Generate directory and fily paths
+    project_dir = config['project_directory']
+    step_dir = os.path.join(project_dir, 'step/')
+    generated_dir = os.path.join(project_dir, 'generated/')
+    # if not os.path.exists(generated_dir):
+    #     os.mkdir(generated_dir)
+    system_dir = os.path.join(project_dir, 'system/')
+    constant_dir = os.path.join(project_dir, 'constant/')
+    trisurface_dir = os.path.join(project_dir, 'constant/triSurface/')
+
+    snappyhex_path = os.path.join(system_dir, 'snappyHexMeshDict')
+    blockmesh_path = os.path.join(system_dir, 'blockMeshDict')
+
+    generated_stl_path = os.path.join(generated_dir, 'meshed_STEP_dirty_binary.stl')
+    cleaned_stl_path = os.path.join(generated_dir, 'clean_STL_ascii.stl')
+    
+
+    # Get STEP file
+    stepfilepath = GetSTEPFileFromDir(step_dir)
+
+
+
+
+    #########   DENNIS - GENERATE STL   ###########
+
+    # Generate STL file and save to generated directory
+    GenerateSTL(stepfilepath, exportFilepath = generated_stl_path)
+
+    ###############################################
+
+
+
+
     # Load all STL files into the scene
-    LoadSTLFilesToScene(config)
+    LoadSTLFilesToScene(generated_stl_path)
 
 
     # Join all loaded STL files into one file 
@@ -1036,7 +1123,9 @@ if __name__ == "__main__":
 
 
     # Clean the geometry of the fused file
-    CleanMesh(obj, delete_non_manifold=True)
+    CleanMesh(obj, 
+              remove_doubles_threshold = config['cleanmesh_merge_threshold'], 
+              delete_non_manifold = True)
 
 
     # Check resulting mesh
@@ -1047,15 +1136,15 @@ if __name__ == "__main__":
     optpoint = FindPointInsideMesh(config)
 
 
-    # Generate and write the BlockMeshDict
-    ndim = config['blockmesh_ndim']
-    buffer = config['blockmesh_buffer']
-    exportpath = config['export_filepath']
-    WriteBlockMeshDict(obj, exportpath = exportpath, ndim = ndim, buffer = buffer)
-
-
     # Update locationInMesh for a supplied snappyHexMeshDict
-    UpdateSnappyHexMeshDict(optpoint, shmdict_path=config['snappyHexMeshDict_filepath'])
+    UpdateSnappyHexMeshDict(optpoint, shmdict_path = snappyhex_path)
+
+
+    # Generate and write the BlockMeshDict
+    WriteBlockMeshDict(obj, 
+                       exportpath = blockmesh_path, 
+                       ndim = config['blockmesh_ndim'], 
+                       buffer = config['blockmesh_buffer'])
 
 
     # Separate the fused geometry into its components (e.g. wall, inlet, outlet etc.)
@@ -1063,47 +1152,23 @@ if __name__ == "__main__":
 
 
     # Exports all objects in the scene to exportpath
-    ExportSTL(exportpath, do_fix_filenames = True)
+    ExportSTL(cleaned_stl_path, do_fix_filenames = True)
+
+
+
+
+    #########   NIMA - FEATURE EDGES   ############
+    
+    # Calculate VTK Edges
+    CalculateVTKEdges(cleaned_stl_path, trisurface_dir)
+    
+    ###############################################
+
+
 
 
     # Finish Execution
     delta_t = time.time() - startTime 
-    print('\nSTL2OPpenFOAM: Execution finished. (t={:.3f}s)\n'.format(delta_t))
+    print('\nSTEP2OpenFOAM: Execution finished. (t={:.3f}s)\n'.format(delta_t))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # # Export via snappyhexmeshgui
-    # exportpath = config['snappyhex_export_filepath'] 
-    # no_cpus = config['snappyhex_no_cpus']
-    # surface_refinement_max = config['snappyhex_surface_refinement_max']
-    # surface_refinement_min = config['snappyhex_surface_refinement_min']
-    # cell_length = config['snappyhex_cell_length']
-    # feature_edge_level = config['snappyhex_feature_edge_level']
-    # cleanup_distance = config['snappyhex_cleanup_distance']
-    # ExportSnappyhexmeshGUI(exportpath, 
-    #                        obj, 
-    #                        clear_directory=True,
-    #                        no_cpus=no_cpus,
-    #                        cell_length=cell_length,
-    #                        surface_refinement_max=surface_refinement_max,
-    #                        surface_refinement_min=surface_refinement_min,
-    #                        feature_edge_level=feature_edge_level,
-    #                        cleanup_distance=cleanup_distance,
-    #                        )
-
-    # InfoMsg("Ending execution.", newline=True)
 
