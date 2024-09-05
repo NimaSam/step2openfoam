@@ -8,7 +8,7 @@ bl_info = {
     "name" : "STEP2OpenFOAM",
     "description" : "A pipeline for creating OpenFOAM data from .STL files",
     "author" : "Lukas Kilian",
-    "version" : (0, 2, 0),
+    "version" : (1, 2, 1),
     "blender" : (4, 0, 0),
     "support" : "COMMUNITY",
 }
@@ -32,7 +32,7 @@ from step2stl import *
 from step2stl import generateSTL as GenerateSTL 
 
 
-# # Nima's Repo stl2foam
+# Nima's Repo stl2foam
 sys.path.append('./../stl2foam')
 from stl2foam import *
 from stl2foam import compute_edges as ComputeAndSaveFeatureEdges
@@ -220,6 +220,7 @@ def BlenderPurgeOrphans():
 
 def DeleteAllBlenderData():
     '''Cleans all data in the current Blender file'''
+    print('\nSetting up Blender...', end=' ')
     if bpy.context.active_object and bpy.context.active_object.mode == "EDIT":
         bpy.ops.object.editmode_toggle()
     for obj in bpy.data.objects:
@@ -231,7 +232,6 @@ def DeleteAllBlenderData():
     collection_names = [col.name for col in bpy.data.collections]
     for name in collection_names:
         bpy.data.collections.remove(bpy.data.collections[name])
-    print('\nDeleting all Blender data...\n..', end=' ')
     BlenderPurgeOrphans()
 
 
@@ -1112,6 +1112,7 @@ if __name__ == "__main__":
     #########   DENNIS - GENERATE STL   ###########
 
     # Generate STL file and save to generated directory
+    print('') #newline for console readability...
     GenerateSTL(stepfilepath, exportFilepath = generated_stl_path)
 
     ###############################################
