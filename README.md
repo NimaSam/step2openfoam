@@ -1,54 +1,53 @@
 # Step2OpenFOAM
 A python script collection to automate the import and processing of STEP files for the use in OpenFOAM simulations.
 
-`Step2OpenFOAM.py` creates a pipeline using the Blender addon STEPper and snappyhexmeshgui to automatically create blockMeshDict and snappyHexMeshDict files, as well as a triangulated .stl geometry. Furthermore, the script automatically determines a locationInMesh specified in snappyHexMeshDict using Blender's raycasting engine. The principle to locate this point is described in more detail [below](#find-point-inside-mesh) . 
+`Step2OpenFOAM.py` creates a pipeline to automatically generate a clean STL file as well as a snappyHexMeshDict and a blockMeshDict for openFOAM simulations based on a `.step` input file. The script will also extract feature edges and supply them as a VTK file.
 
-## Prerequisites:
+The determination of locationInMesh specified in snappyHexMeshDict is done using Blender's raycasting engine. The principle to locate this point is described in more detail [below](#find-point-inside-mesh) . 
 
-- Windows 10+, 64-bit
-- Blender 2.8+ with Python 3.7+ [blender.org ](https://www.blender.org/)
-- STEPper addon [ambient.gumroad.com/l/stepper](https://ambient.gumroad.com/l/stepper)
-- snappyhexmeshgui addon [github.com/tkeskita/snappyhexmesh_gui](https://github.com/tkeskita/snappyhexmesh_gui)
+## Dependencies
+
+- python 3.10
+- bpy module for python
+- FreeCAD libraries
 
 ## Setup:
 
-1. Install Blender
-2. Add blender.exe to PATH *OR* copy path to blender.exe
-   - Default install location: C:/Program Files/Blender Foundation/Blender X/blender.exe
-3. Set up config.json (see explanation of values below)
-4. Run the script using blender from the console:
+1. Setup python 3.10
+2. Install FreeCAD
+   2.1 LINUX: Install it via `apt install freecad`, set `FREECADPATH = '/usr/lib/freecad-python3/lib/'`
+   2.2 WINDOWS: Install the .exe via the official website, set `FREECADPATH` to where `FreeCAD.pyd` is located, typically located in `FREECADPATH = 'C:/Program Files/FreeCAD 0.XX/bin/'`
+3. Make sure `bpy` is installed for python, `pip install bpy`
+4. Set up config.json (see explanation of values below)
+5. Run the script from the console while supplying a valid config file
 ``` 
-blender.exe --background --python Step2OpenFOAM.py
+python3.10 STEP2OpenFOAM.py /path/to/config.json
 ```
 
 
 ## Config
 
-#### Import Settings for STEPper
+#### General Settings
 
-- "**stepper_import_filepath**": *"./step_samples/"*,
-  - Path to the base directory where the .step/.stp file is located
-- "**stepper_import_file**": *"Oppo_reno_10_pro_5G.step"*,
-  - Name of the step file 
-- "**stepper_import_detail_level**": *1000*,
-  - How detailed the imported STEP file wil be meshed. This value is an input to the STEPper addon. Higher numbers create more vertices.
+- "**project_directory**": *"./path/to/project_basedir/"*,
+  - Path to the base directory of the project
 
-#### Export Settings for SnappyHexMeshGUI
+#### Settings for blockMeshDict generation
 
-- "**snappyhex_export_filepath**": *"./export/"*,
-  - Path to the folder where snappyhexmeshgui will export its files.
-- "**snappyhex_no_cpus**": *4*,
-  - No. CPUs for decomposeParDict
-- "**snappyhex_cell_length**": *0.1*,
-  - Length of Base Block Mesh Cell Size
-- "**snappyhex_surface_refinement_min**": *2*,
-  - Minimum cell refinement level for surface
-- "**snappyhex_surface_refinement_max**": *2*,
-  - Maximum cell refinement level for surface
-- "**snappyhex_cleanup_distance**": *1e-5*,
-  - Maximum distance for merging closeby vertices
-- "**snappyhex_feature_edge_level**": *0*,
-  - Feature edge refinemenet level for surface
+- "**blockmesh_ndim**": *100*,
+  - This is the highest resolution of the backgroundMesh in the direction of greatest extent of the input geometry.
+  - Remaining resolutions will be calculated based on this parameter such that blocks are perfect cubes. 
+- "**blockmesh_buffer**": *0.1*,
+  - Additional 'flesh' around the object for blockMesh generation. E.g. 0.1 = 10% extra space around the object, while 0 = 0% means that the blockMesh is snug against the geometry in the direction of greatest extent.
+
+
+#### Settings for mesh Cleaning
+
+- "**cleanmesh_merge_threshold**": *1e-7*,
+  - Tolerance for merging closeby and duplicate vertices.
+  - A higher number will fix larger holes, but it may also delete (smoothe) high detail areas.
+  - Adapt this number to the size of your geometry.
+
 
 #### Settings for the Find Point Inside Mesh subfunction
 
